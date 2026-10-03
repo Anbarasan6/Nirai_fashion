@@ -116,7 +116,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const t = (key: any, params?: Record<string, string | number>) => {
-    return getTranslation(language, key, params);
+    const overrides = language === 'ta' ? settings?.custom_texts_ta : settings?.custom_texts_en;
+    return getTranslation(language, key, params, overrides);
   };
 
   const addToCart = (product: Product, quantity = 1, selected_variant?: string) => {

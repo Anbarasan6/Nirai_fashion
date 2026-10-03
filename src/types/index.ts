@@ -134,6 +134,23 @@ export interface BankDetails {
   branch: string;
 }
 
+export interface HeroSlide {
+  id?: string;
+  image: string;
+  titleEn: string;
+  titleTa: string;
+  subtitleEn: string;
+  subtitleTa: string;
+  ctaUrl: string;
+}
+
+export interface CmsFaqItem {
+  q_en: string;
+  q_ta: string;
+  a_en: string;
+  a_ta: string;
+}
+
 export interface StoreSettings {
   id: string;
   store_name: string;
@@ -145,6 +162,11 @@ export interface StoreSettings {
   contact_email: string;
   announcement_en: string;
   announcement_ta: string;
+  free_shipping_threshold?: number;
+  hero_slides?: HeroSlide[];
+  custom_texts_en?: Record<string, string>;
+  custom_texts_ta?: Record<string, string>;
+  faqs?: CmsFaqItem[];
 }
 
 export interface CartItem {

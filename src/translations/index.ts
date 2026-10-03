@@ -227,8 +227,13 @@ export const translations = {
   }
 };
 
-export const getTranslation = (lang: Language, key: keyof typeof translations.en, params?: Record<string, string | number>): string => {
-  let text = translations[lang]?.[key] || translations.en[key] || key;
+export const getTranslation = (
+  lang: Language,
+  key: keyof typeof translations.en,
+  params?: Record<string, string | number>,
+  customOverrides?: Record<string, string>
+): string => {
+  let text = customOverrides?.[key] || translations[lang]?.[key] || translations.en[key] || key;
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));

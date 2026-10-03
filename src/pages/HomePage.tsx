@@ -5,47 +5,39 @@ import { useShop } from '../context/ShopContext';
 import { InfiniteMarquee } from '../components/common/InfiniteMarquee';
 import { AutoScrollSareeTicker } from '../components/storefront/AutoScrollSareeTicker';
 
-const HERO_SLIDES = [
-  {
-    image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1920&q=85',
-    titleEn: 'Royal Elampillai Soft Silks',
-    titleTa: 'ராயல் இளம்பிள்ளை சாஃப்ட் சில்க்ஸ்',
-    subtitleEn: 'Handwoven in Salem with high-density pure zari peacock motifs.',
-    subtitleTa: 'அடர்ந்த ஜரி மயில் உருவங்களுடன் சேலத்தில் கையால் நெய்யப்பட்டது.',
-    ctaUrl: '/catalog?category=cat_elampillai'
-  },
-  {
-    image: 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1920&q=85',
-    titleEn: 'Kanchipuram Heritage Bridal Silks',
-    titleTa: 'காஞ்சிபுரம் ஹெரிடேஜ் பிரைடல் பட்டு',
-    subtitleEn: 'Authentic 3-ply heavy mulberry silk sarees with golden Korvai borders.',
-    subtitleTa: 'தங்கக் கோர்வை பார்டர்களுடன் கூடிய தூய 3-பிளை காஞ்சிபுரம் திருமண புடவைகள்.',
-    ctaUrl: '/catalog?category=cat_kanchipuram'
-  },
-  {
-    image: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1920&q=85',
-    titleEn: 'Featherlight Soft Silk Sarees',
-    titleTa: 'இலகுரக சாஃப்ட் சில்க் சேலைகள்',
-    subtitleEn: 'Graceful pastel weaves crafted for effortless daylong comfort.',
-    subtitleTa: 'நாள்முழுதும் சுகமாக அணியக்கூடிய மென்மையான பாஸ்டல் வண்ண நெசவுகள்.',
-    ctaUrl: '/catalog?category=cat_softsilk'
-  }
-];
-
 export const HomePage: React.FC = () => {
-  const { language, t, categories, products, addToCart, toggleWishlist, isInWishlist } = useShop();
+  const { language, t, categories, products, addToCart, toggleWishlist, isInWishlist, settings } = useShop();
   const [currentSlide, setCurrentSlide] = useState(0);
   const navigate = useNavigate();
 
+  const heroSlides = settings.hero_slides && settings.hero_slides.length > 0 ? settings.hero_slides : [
+    {
+      image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1920&q=85',
+      titleEn: 'Royal Elampillai Soft Silks',
+      titleTa: 'ராயல் இளம்பிள்ளை சாஃப்ட் சில்க்ஸ்',
+      subtitleEn: 'Handwoven in Salem with high-density pure zari peacock motifs.',
+      subtitleTa: 'அடர்ந்த ஜரி மயில் உருவங்களுடன் சேலத்தில் கையால் நெய்யப்பட்டது.',
+      ctaUrl: '/catalog?category=cat_elampillai'
+    },
+    {
+      image: 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1920&q=85',
+      titleEn: 'Kanchipuram Heritage Bridal Silks',
+      titleTa: 'காஞ்சிபுரம் ஹெரிடேஜ் பிரைடல் பட்டு',
+      subtitleEn: 'Authentic 3-ply heavy mulberry silk sarees with golden Korvai borders.',
+      subtitleTa: 'தங்கக் கோர்வை பார்டர்களுடன் கூடிய தூய 3-பிளை காஞ்சிபுரம் திருமண புடவைகள்.',
+      ctaUrl: '/catalog?category=cat_kanchipuram'
+    }
+  ];
+
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+      setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, []);
+  }, [heroSlides.length]);
 
-  const nextSlide = () => setCurrentSlide((prev) => (prev + 1) % HERO_SLIDES.length);
-  const prevSlide = () => setCurrentSlide((prev) => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length);
+  const nextSlide = () => setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+  const prevSlide = () => setCurrentSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length);
 
   const featuredProducts = products.filter(p => p.is_featured).slice(0, 8);
 
@@ -55,9 +47,9 @@ export const HomePage: React.FC = () => {
       {/* Infinite Auto-Scrolling Announcement Marquee */}
       <InfiniteMarquee />
 
-      {/* Hero Carousel */}
+      {/* Dynamic Hero Carousel */}
       <section className="relative h-[480px] sm:h-[580px] lg:h-[650px] w-full overflow-hidden bg-[#1E0B0E]">
-        {HERO_SLIDES.map((slide, idx) => (
+        {heroSlides.map((slide, idx) => (
           <div
             key={idx}
             className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
@@ -86,7 +78,7 @@ export const HomePage: React.FC = () => {
 
               <div className="flex flex-wrap gap-4 pt-2">
                 <Link
-                  to={slide.ctaUrl}
+                  to={slide.ctaUrl || '/catalog'}
                   className="px-7 py-3.5 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-[#2D1619] font-extrabold text-xs sm:text-sm rounded-full hover:shadow-2xl hover:scale-105 transition-all flex items-center gap-2 shadow-lg"
                 >
                   <span>{t('exploreCatalog')}</span>
@@ -117,7 +109,7 @@ export const HomePage: React.FC = () => {
         </button>
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-2">
-          {HERO_SLIDES.map((_, idx) => (
+          {heroSlides.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentSlide(idx)}
