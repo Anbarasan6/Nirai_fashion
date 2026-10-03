@@ -7,7 +7,7 @@ export const Footer: React.FC = () => {
   const { language, t, settings } = useShop();
 
   return (
-    <footer className="bg-[#1E0B0E] text-[#ECE6D9] pt-16 pb-8 border-t-4 border-[#D4AF37]">
+    <footer className="bg-[#1E0B0E] text-[#ECE6D9] pt-16 pb-20 lg:pb-8 border-t-4 border-[#D4AF37]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Value Proposition Badges */}
@@ -83,7 +83,7 @@ export const Footer: React.FC = () => {
           {/* Quick Links */}
           <div className="space-y-3">
             <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] uppercase tracking-wider">
-              {language === 'ta' ? 'விரைவு இணைப்புகள்' : 'Quick Links'}
+              Quick Links
             </h4>
             <ul className="space-y-2 text-xs text-[#C5B7BA]">
               <li>
@@ -93,42 +93,40 @@ export const Footer: React.FC = () => {
                 <Link to="/catalog" className="hover:text-[#D4AF37] transition">{t('catalog')}</Link>
               </li>
               <li>
+                <Link to="/deals" className="hover:text-[#D4AF37] transition">Offers & Deals</Link>
+              </li>
+              <li>
+                <Link to="/about" className="hover:text-[#D4AF37] transition">About Us</Link>
+              </li>
+              <li>
+                <Link to="/contact" className="hover:text-[#D4AF37] transition">Contact Support</Link>
+              </li>
+              <li>
                 <Link to="/tracking" className="hover:text-[#D4AF37] transition">{t('trackOrder')}</Link>
-              </li>
-              <li>
-                <Link to="/policies" className="hover:text-[#D4AF37] transition">{t('policies')}</Link>
-              </li>
-              <li>
-                <Link to="/admin" className="hover:text-[#D4AF37] transition">{t('adminPortal')}</Link>
               </li>
             </ul>
           </div>
 
-          {/* Categories */}
+          {/* Customer Policies */}
           <div className="space-y-3">
             <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] uppercase tracking-wider">
-              {t('categories')}
+              Legal & Policies
             </h4>
             <ul className="space-y-2 text-xs text-[#C5B7BA]">
               <li>
-                <Link to="/catalog?category=cat_elampillai" className="hover:text-[#D4AF37] transition">
-                  {language === 'ta' ? 'இளம்பிள்ளை சாஃப்ட் பட்டு' : 'Elampillai Soft Silks'}
-                </Link>
+                <Link to="/privacy" className="hover:text-[#D4AF37] transition">Privacy Policy</Link>
               </li>
               <li>
-                <Link to="/catalog?category=cat_kanchipuram" className="hover:text-[#D4AF37] transition">
-                  {language === 'ta' ? 'காஞ்சிபுரம் பிரைடல் பட்டு' : 'Kanchipuram Bridal Silks'}
-                </Link>
+                <Link to="/terms" className="hover:text-[#D4AF37] transition">Terms & Conditions</Link>
               </li>
               <li>
-                <Link to="/catalog?category=cat_softsilk" className="hover:text-[#D4AF37] transition">
-                  {language === 'ta' ? 'சாஃப்ட் சில்க் சேலைகள்' : 'Lightweight Soft Silks'}
-                </Link>
+                <Link to="/shipping-policy" className="hover:text-[#D4AF37] transition">Shipping Policy</Link>
               </li>
               <li>
-                <Link to="/catalog?category=cat_dhoti" className="hover:text-[#D4AF37] transition">
-                  {language === 'ta' ? 'தூய பட்டு வேஷ்டி செட்' : 'Pure Silk Dhotis'}
-                </Link>
+                <Link to="/return-policy" className="hover:text-[#D4AF37] transition">Return & Exchange</Link>
+              </li>
+              <li>
+                <Link to="/faq" className="hover:text-[#D4AF37] transition">FAQ Help Center</Link>
               </li>
             </ul>
           </div>

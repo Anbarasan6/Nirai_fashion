@@ -27,6 +27,9 @@ export interface Product {
   is_new_arrival: boolean;
   images: string[];
   variants: ProductVariant[];
+  badge?: 'NEW' | 'BESTSELLER' | 'SALE' | 'LIMITED STOCK';
+  rating?: number;
+  review_count?: number;
   created_at?: string;
 }
 
@@ -43,6 +46,7 @@ export interface Category {
 }
 
 export interface Address {
+  id?: string;
   fullName?: string;
   phone?: string;
   street: string;
@@ -50,6 +54,7 @@ export interface Address {
   state: string;
   pincode: string;
   landmark?: string;
+  isDefault?: boolean;
 }
 
 export interface Customer {
@@ -69,6 +74,7 @@ export interface User {
   name: string;
   role: 'admin' | 'customer';
   phone?: string;
+  addresses?: Address[];
   created_at?: string;
 }
 
@@ -84,7 +90,7 @@ export interface OrderItem {
 
 export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 export type PaymentStatus = 'UNPAID' | 'VERIFYING' | 'PAID' | 'FAILED';
-export type PaymentMethod = 'UPI_QR' | 'BANK_TRANSFER';
+export type PaymentMethod = 'UPI_QR' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'NET_BANKING' | 'COD';
 
 export interface Order {
   id: string;
@@ -145,4 +151,24 @@ export interface CartItem {
   product: Product;
   quantity: number;
   selected_variant?: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  date: string;
+  isRead: boolean;
+  link?: string;
+}
+
+export interface ReviewItem {
+  id: string;
+  productId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  date: string;
+  isVerifiedPurchase: boolean;
+  userPhoto?: string;
 }

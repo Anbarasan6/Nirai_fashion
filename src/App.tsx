@@ -5,14 +5,28 @@ import { Header } from './components/common/Header';
 import { Footer } from './components/common/Footer';
 import { CartDrawer } from './components/storefront/CartDrawer';
 import { MobileBottomNav } from './components/common/MobileBottomNav';
+import { WhatsAppButton } from './components/common/WhatsAppButton';
 
 import { HomePage } from './pages/HomePage';
 import { CatalogPage } from './pages/CatalogPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
+import { CartPage } from './pages/CartPage';
+import { WishlistPage } from './pages/WishlistPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderConfirmationPage } from './pages/OrderConfirmationPage';
 import { OrderTrackingPage } from './pages/OrderTrackingPage';
 import { PoliciesPage } from './pages/PoliciesPage';
+import { AuthPage } from './pages/AuthPage';
+import { AccountPage } from './pages/AccountPage';
+import { DealsPage } from './pages/DealsPage';
+import { AboutPage } from './pages/AboutPage';
+import { ContactPage } from './pages/ContactPage';
+import { FaqPage } from './pages/FaqPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { TermsPage } from './pages/TermsPage';
+import { ShippingPolicyPage } from './pages/ShippingPolicyPage';
+import { ReturnPolicyPage } from './pages/ReturnPolicyPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
@@ -40,6 +54,7 @@ const StorefrontLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       <main className="flex-1">{children}</main>
       <Footer />
       <MobileBottomNav />
+      <WhatsAppButton />
     </div>
   );
 };
@@ -51,62 +66,26 @@ export function App() {
         <ScrollToTop />
         <Routes>
           {/* Storefront Pages */}
-          <Route
-            path="/"
-            element={
-              <StorefrontLayout>
-                <HomePage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/catalog"
-            element={
-              <StorefrontLayout>
-                <CatalogPage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/product/:id"
-            element={
-              <StorefrontLayout>
-                <ProductDetailPage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/checkout"
-            element={
-              <StorefrontLayout>
-                <CheckoutPage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/order-confirmation/:orderId"
-            element={
-              <StorefrontLayout>
-                <OrderConfirmationPage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/tracking"
-            element={
-              <StorefrontLayout>
-                <OrderTrackingPage />
-              </StorefrontLayout>
-            }
-          />
-          <Route
-            path="/policies"
-            element={
-              <StorefrontLayout>
-                <PoliciesPage />
-              </StorefrontLayout>
-            }
-          />
+          <Route path="/" element={<StorefrontLayout><HomePage /></StorefrontLayout>} />
+          <Route path="/catalog" element={<StorefrontLayout><CatalogPage /></StorefrontLayout>} />
+          <Route path="/product/:id" element={<StorefrontLayout><ProductDetailPage /></StorefrontLayout>} />
+          <Route path="/cart" element={<StorefrontLayout><CartPage /></StorefrontLayout>} />
+          <Route path="/wishlist" element={<StorefrontLayout><WishlistPage /></StorefrontLayout>} />
+          <Route path="/checkout" element={<StorefrontLayout><CheckoutPage /></StorefrontLayout>} />
+          <Route path="/order-confirmation/:orderId" element={<StorefrontLayout><OrderConfirmationPage /></StorefrontLayout>} />
+          <Route path="/tracking" element={<StorefrontLayout><OrderTrackingPage /></StorefrontLayout>} />
+          <Route path="/policies" element={<StorefrontLayout><PoliciesPage /></StorefrontLayout>} />
+          <Route path="/auth" element={<StorefrontLayout><AuthPage /></StorefrontLayout>} />
+          <Route path="/account" element={<StorefrontLayout><AccountPage /></StorefrontLayout>} />
+          <Route path="/deals" element={<StorefrontLayout><DealsPage /></StorefrontLayout>} />
+          <Route path="/about" element={<StorefrontLayout><AboutPage /></StorefrontLayout>} />
+          <Route path="/contact" element={<StorefrontLayout><ContactPage /></StorefrontLayout>} />
+          <Route path="/faq" element={<StorefrontLayout><FaqPage /></StorefrontLayout>} />
+          <Route path="/privacy" element={<StorefrontLayout><PrivacyPolicyPage /></StorefrontLayout>} />
+          <Route path="/terms" element={<StorefrontLayout><TermsPage /></StorefrontLayout>} />
+          <Route path="/shipping-policy" element={<StorefrontLayout><ShippingPolicyPage /></StorefrontLayout>} />
+          <Route path="/return-policy" element={<StorefrontLayout><ReturnPolicyPage /></StorefrontLayout>} />
+          <Route path="*" element={<StorefrontLayout><NotFoundPage /></StorefrontLayout>} />
 
           {/* Admin Operations Suite */}
           <Route path="/admin" element={<AdminLayout />}>
