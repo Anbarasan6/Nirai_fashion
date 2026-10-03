@@ -3,8 +3,9 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, ShoppingBag, FolderKanban, ShoppingCart, Users, Tag, 
   FileSpreadsheet, RefreshCw, LogOut, Trash2, RotateCcw, Menu, X, 
-  Type, ExternalLink, ShieldCheck, LucideIcon
+  Type, ExternalLink, ShieldCheck
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { AdminLoginPage } from './AdminLoginPage';
