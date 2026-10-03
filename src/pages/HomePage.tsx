@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, ArrowRight, ShoppingBag, Heart, Star, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Sparkles, ArrowRight, ShoppingBag, Heart, Star, CheckCircle2, ChevronLeft, ChevronRight, Flame } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
+import { InfiniteMarquee } from '../components/common/InfiniteMarquee';
+import { AutoScrollSareeTicker } from '../components/storefront/AutoScrollSareeTicker';
 
 const HERO_SLIDES = [
   {
@@ -22,7 +24,7 @@ const HERO_SLIDES = [
   },
   {
     image: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1920&q=85',
-    titleEn: 'Featherlight Feather Soft Silks',
+    titleEn: 'Featherlight Soft Silk Sarees',
     titleTa: 'இலகுரக சாஃப்ட் சில்க் சேலைகள்',
     subtitleEn: 'Graceful pastel weaves crafted for effortless daylong comfort.',
     subtitleTa: 'நாள்முழுதும் சுகமாக அணியக்கூடிய மென்மையான பாஸ்டல் வண்ண நெசவுகள்.',
@@ -48,8 +50,11 @@ export const HomePage: React.FC = () => {
   const featuredProducts = products.filter(p => p.is_featured).slice(0, 8);
 
   return (
-    <div className="space-y-16 pb-16">
+    <div className="space-y-16 pb-20">
       
+      {/* Infinite Auto-Scrolling Announcement Marquee */}
+      <InfiniteMarquee />
+
       {/* Hero Carousel */}
       <section className="relative h-[480px] sm:h-[580px] lg:h-[650px] w-full overflow-hidden bg-[#1E0B0E]">
         {HERO_SLIDES.map((slide, idx) => (
@@ -59,18 +64,16 @@ export const HomePage: React.FC = () => {
               idx === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
             }`}
           >
-            {/* Background Image with Gradient Overlay */}
             <div
               className="absolute inset-0 bg-cover bg-center scale-105 transition-transform duration-[10000ms]"
               style={{ backgroundImage: `url(${slide.image})` }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-[#1E0B0E]/95 via-[#2D1619]/80 to-transparent" />
 
-            {/* Slide Content */}
             <div className="relative max-w-7xl mx-auto h-full px-6 sm:px-12 flex flex-col justify-center text-left space-y-6">
               <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F4E8C1] text-xs font-semibold tracking-wider uppercase backdrop-blur-md w-fit">
                 <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>100% Handloom Guaranteed</span>
+                <span>100% Direct Salem Looms</span>
               </div>
 
               <h1 className="font-serif-luxury text-3xl sm:text-5xl lg:text-6xl font-extrabold text-[#F4E8C1] leading-tight max-w-2xl drop-shadow-md">
@@ -100,7 +103,6 @@ export const HomePage: React.FC = () => {
           </div>
         ))}
 
-        {/* Carousel Navigation Arrows */}
         <button
           onClick={prevSlide}
           className="absolute left-4 top-1/2 -translate-y-1/2 z-20 p-2.5 rounded-full bg-black/40 text-[#F4E8C1] hover:bg-[#D4AF37] hover:text-[#2D1619] transition backdrop-blur-sm"
@@ -114,7 +116,6 @@ export const HomePage: React.FC = () => {
           <ChevronRight className="w-6 h-6" />
         </button>
 
-        {/* Carousel Dots */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-2">
           {HERO_SLIDES.map((_, idx) => (
             <button
@@ -126,6 +127,21 @@ export const HomePage: React.FC = () => {
             />
           ))}
         </div>
+      </section>
+
+      {/* Auto-Scrolling Saree Ticker Showcase */}
+      <section className="space-y-4">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Flame className="w-5 h-5 text-[#D4AF37] animate-pulse" />
+            <h3 className="font-serif-luxury text-lg sm:text-xl font-bold text-[#2D1619]">
+              {language === 'ta' ? 'நேரடி நெசவாளர் சேலை கண்காட்சி' : 'Live Auto-Scrolling Saree Showcase'}
+            </h3>
+          </div>
+          <span className="text-xs text-[#8A7B7E] hidden sm:inline">Auto Gliding Weaves</span>
+        </div>
+        
+        <AutoScrollSareeTicker />
       </section>
 
       {/* Featured Categories Grid */}
@@ -202,7 +218,6 @@ export const HomePage: React.FC = () => {
                 key={product.id}
                 className="group bg-white rounded-2xl overflow-hidden border border-[#E2D9C8] shadow-md hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
               >
-                {/* Product Image & Badges */}
                 <div className="relative aspect-[3/4] overflow-hidden bg-[#F2ECDF]">
                   <img
                     src={product.images[0]}
@@ -211,7 +226,6 @@ export const HomePage: React.FC = () => {
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 cursor-pointer"
                   />
 
-                  {/* Wishlist Button */}
                   <button
                     onClick={() => toggleWishlist(product)}
                     className={`absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition ${
@@ -221,14 +235,12 @@ export const HomePage: React.FC = () => {
                     <Heart className={`w-4 h-4 ${inWishlist ? 'fill-white' : ''}`} />
                   </button>
 
-                  {/* Discount Tag */}
                   {product.discount_price && (
                     <div className="absolute top-3 left-3 bg-[#4A0E17] text-[#F4E8C1] text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-sm">
                       {Math.round(((product.price - product.discount_price) / product.price) * 100)}% OFF
                     </div>
                   )}
 
-                  {/* Stock Indicator */}
                   {product.stock_quantity <= 5 && (
                     <div className="absolute bottom-3 left-3 bg-[#2D1619]/90 text-[#F4E8C1] text-[10px] font-semibold px-2 py-0.5 rounded-md backdrop-blur-sm">
                       Only {product.stock_quantity} left
@@ -236,7 +248,6 @@ export const HomePage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Product Details */}
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div>
                     <span className="text-[10px] font-bold text-[#8A7B7E] uppercase tracking-wider">

@@ -25,8 +25,8 @@
 
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -44,27 +44,54 @@
 
 /* Glassmorphism & Micro-animations */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-}
-
-.glass-dark {
-  background: rgba(45, 22, 25, 0.92);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(212, 175, 55, 0.25);
 }
 
+.glass-dark {
+  background: rgba(45, 22, 25, 0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+}
+
 .gold-gradient-text {
-  background: linear-gradient(135deg, #D4AF37 0%, #F4E8C1 50%, #B8860B 100%);
+  background: linear-gradient(135deg, #F4E8C1 0%, #D4AF37 50%, #B8860B 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.gold-border-glow {
-  box-shadow: 0 0 15px rgba(212, 175, 55, 0.25);
+/* Infinite Auto-Scrolling Marquee Animations */
+@keyframes infinite-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes reverse-scroll {
+  0% { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: infinite-scroll 25s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.animate-marquee-reverse {
+  display: flex;
+  width: max-content;
+  animation: reverse-scroll 30s linear infinite;
+}
+
+.animate-marquee-reverse:hover {
+  animation-play-state: paused;
 }
 
 /* Shimmer animation */
@@ -74,7 +101,7 @@
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(212,175,55,0.4) 50%, rgba(255,255,255,0) 100%);
   background-size: 200% 100%;
-  animation: shimmer 2.5s infinite;
+  animation: shimmer 3s infinite;
 }

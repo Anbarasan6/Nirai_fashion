@@ -4,6 +4,7 @@ import { ShopProvider } from './context/ShopContext';
 import { Header } from './components/common/Header';
 import { Footer } from './components/common/Footer';
 import { CartDrawer } from './components/storefront/CartDrawer';
+import { MobileBottomNav } from './components/common/MobileBottomNav';
 
 import { HomePage } from './pages/HomePage';
 import { CatalogPage } from './pages/CatalogPage';
@@ -23,7 +24,6 @@ import { AdminCouponsPage } from './pages/admin/AdminCouponsPage';
 import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
 import { AdminReportsPage } from './pages/admin/AdminReportsPage';
 
-// Scroll to top on route change helper
 const ScrollToTop = () => {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -32,7 +32,6 @@ const ScrollToTop = () => {
   return null;
 };
 
-// Main Storefront Layout
 const StorefrontLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="min-h-screen flex flex-col justify-between bg-[#FBF9F5] text-[#1E1012]">
@@ -40,6 +39,7 @@ const StorefrontLayout: React.FC<{ children: React.ReactNode }> = ({ children })
       <CartDrawer />
       <main className="flex-1">{children}</main>
       <Footer />
+      <MobileBottomNav />
     </div>
   );
 };
@@ -50,7 +50,7 @@ export function App() {
       <Router>
         <ScrollToTop />
         <Routes>
-          {/* Storefront Individual Pages */}
+          {/* Storefront Pages */}
           <Route
             path="/"
             element={
@@ -108,7 +108,7 @@ export function App() {
             }
           />
 
-          {/* Admin Operations Suite Routes */}
+          {/* Admin Operations Suite */}
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
             <Route path="products" element={<AdminProductsPage />} />
