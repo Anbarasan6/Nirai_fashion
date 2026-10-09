@@ -42,6 +42,26 @@ const SEED_CATEGORIES: Category[] = [
     description_en: 'Traditional Mayilkan zari border pure silk dhotis with angavastram.',
     description_ta: 'திருமணங்களுக்கு பாரம்பரிய மயில் கண் ஜரி பார்டர் தூய பட்டு வேஷ்டிகள்.',
     is_active: true
+  },
+  {
+    id: 'cat_kids',
+    name_en: 'Kids Ethnic Wear',
+    name_ta: 'குழந்தைகள் பட்டுப் பாவாடை செட்',
+    slug: 'kids-wear',
+    image_url: 'https://images.unsplash.com/photo-1596870230751-ebdfce98ec42?auto=format&fit=crop&w=800&q=80',
+    description_en: 'Authentic South Indian silk Pattu Pavadai and Veshti sets for boys and girls.',
+    description_ta: 'சிறுமிகளுக்கான தூய பட்டுப் பாவாடை மற்றும் சிறுவர்களுக்கான பட்டு வேஷ்டி சட்டை.',
+    is_active: true
+  },
+  {
+    id: 'cat_cotton',
+    name_en: 'Handloom Cotton Sarees',
+    name_ta: 'கைத்தறி பருத்தி சேலைகள்',
+    slug: 'handloom-cotton',
+    image_url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80',
+    description_en: 'Breathable, eco-friendly Chettinad and Salem handloom organic cotton sarees.',
+    description_ta: 'மூச்சுவிடக்கூடிய, சூழல் நட்பு செட்டிநாடு மற்றும் சேலம் கைத்தறி பருத்தி சேலைகள்.',
+    is_active: true
   }
 ];
 
