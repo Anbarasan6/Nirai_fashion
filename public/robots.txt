@@ -1,0 +1,7 @@
+# NIRAI Handloom Silks - Robots.txt
+User-agent: *
+Allow: /
+Disallow: /?admin=*
+Disallow: /?tab=checkout
+
+Sitemap: https://niraifashions.vercel.app/sitemap.xml
