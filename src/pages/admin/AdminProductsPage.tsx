@@ -137,6 +137,81 @@ export const AdminProductsPage: React.FC = () => {
     }
   };
 
+  const handleExportCSV = () => {
+    const headers = ['id', 'sku', 'name_en', 'name_ta', 'price', 'discount_price', 'fabric_type', 'stock_quantity', 'category_id', 'description_en'];
+    const rows = products.map(p => [
+      p.id,
+      p.sku || '',
+      `"${(p.name_en || '').replace(/"/g, '""')}"`,
+      `"${(p.name_ta || '').replace(/"/g, '""')}"`,
+      p.price,
+      p.discount_price || '',
+      `"${(p.fabric_type || '').replace(/"/g, '""')}"`,
+      p.stock_quantity,
+      p.category_id || '',
+      `"${(p.description_en || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `nirai_products_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const text = evt.target?.result as string;
+      if (!text) return;
+
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length <= 1) return;
+
+      let importedCount = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(',');
+        if (parts.length >= 5) {
+          const skuVal = parts[1]?.replace(/"/g, '') || `NIR-CSV-${Date.now()}-${i}`;
+          const nameVal = parts[2]?.replace(/"/g, '') || `CSV Handloom ${i}`;
+          const priceVal = Number(parts[4]) || 3999;
+          const stockVal = Number(parts[7]) || 10;
+
+          const newProd: Product = {
+            id: `prod_csv_${Date.now()}_${i}`,
+            sku: skuVal,
+            slug: nameVal.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            name_en: nameVal,
+            name_ta: parts[3]?.replace(/"/g, '') || nameVal,
+            description_en: parts[9]?.replace(/"/g, '') || 'Imported handloom silk saree.',
+            category_id: parts[8]?.replace(/"/g, '') || 'cat_elampillai',
+            price: priceVal,
+            discount_price: parts[5] ? Number(parts[5]) : undefined,
+            fabric_type: parts[6]?.replace(/"/g, '') || 'Pure Silk',
+            is_in_stock: stockVal > 0,
+            stock_quantity: stockVal,
+            is_featured: false,
+            is_new_arrival: true,
+            images: ['https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80'],
+            variants: [{ color: 'Standard', stock: stockVal }]
+          };
+
+          await StorageService.saveProduct(newProd);
+          importedCount++;
+        }
+      }
+
+      alert(`Successfully imported ${importedCount} products into inventory!`);
+    };
+    reader.readAsText(file);
+  };
+
   const filteredProducts = products.filter(p => {
     const q = searchQuery.toLowerCase();
     return p.name_en.toLowerCase().includes(q) || p.name_ta?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q);
@@ -146,16 +221,16 @@ export const AdminProductsPage: React.FC = () => {
     <div className="space-y-6">
       
       {/* Header Controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E2D9C8] shadow-sm">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E2D9C8] shadow-sm">
         <div>
           <h2 className="font-serif-luxury text-xl font-bold text-[#2D1619]">
             Product & Saree Inventory Manager
           </h2>
-          <p className="text-xs text-[#8A7B7E]">Manage silk variants, pricing, and Cloudinary media uploads</p>
+          <p className="text-xs text-[#8A7B7E]">Manage silk variants, pricing, bulk CSV import/export, and Cloudinary media uploads</p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <div className="relative flex-1 min-w-[200px]">
             <input
               type="text"
               value={searchQuery}
@@ -167,8 +242,21 @@ export const AdminProductsPage: React.FC = () => {
           </div>
 
           <button
+            onClick={handleExportCSV}
+            className="px-3.5 py-2 bg-[#F4E8C1] text-[#4A0E17] text-xs font-bold rounded-xl hover:bg-[#EADBAB] transition flex items-center gap-1 shrink-0"
+            title="Export catalog to CSV"
+          >
+            <span>Export CSV</span>
+          </button>
+
+          <label className="px-3.5 py-2 bg-[#F4E8C1] text-[#4A0E17] text-xs font-bold rounded-xl hover:bg-[#EADBAB] transition cursor-pointer flex items-center gap-1 shrink-0">
+            <span>Import CSV</span>
+            <input type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
+          </label>
+
+          <button
             onClick={openAddModal}
-            className="px-4 py-2 bg-[#2D1619] text-[#F4E8C1] text-xs font-bold rounded-xl hover:bg-[#4A0E17] flex items-center gap-1.5 shrink-0"
+            className="px-4 py-2 bg-[#2D1619] text-[#F4E8C1] text-xs font-bold rounded-xl hover:bg-[#4A0E17] flex items-center gap-1.5 shrink-0 shadow"
           >
             <Plus className="w-4 h-4 text-[#D4AF37]" />
             <span>Add New Saree</span>
