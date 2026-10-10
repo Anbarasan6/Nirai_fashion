@@ -1,76 +1,178 @@
 import React, { useState } from 'react';
-import { Mail, Phone, MapPin, Send, CheckCircle2 } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
+import { Phone, Mail, MapPin, Send, Clock, CheckCircle2 } from 'lucide-react';
 
 export const ContactPage: React.FC = () => {
-  const { settings, orders } = useShop();
-  const [selectedOrder, setSelectedOrder] = useState('');
+  const { storeSettings, showToast } = useShop();
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    if (!name || !email || !message) {
+      showToast('Please fill in all required contact form fields', 'error');
+      return;
+    }
+    setIsSubmitted(true);
+    showToast('Your message has been sent to our customer care team!', 'success');
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
-      <div className="text-center space-y-2">
-        <h1 className="font-serif-luxury text-3xl font-extrabold text-[#2D1619]">Contact Master Weaver Support</h1>
-        <p className="text-xs text-[#6B5B5E]">Direct assistance for orders, custom saree weaving, and bulk wedding inquiries.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="space-y-6 text-xs text-[#4A0E17]">
-          <div className="p-5 bg-white rounded-2xl border border-[#E2D9C8] space-y-3">
-            <h3 className="font-serif-luxury text-base font-bold text-[#2D1619]">Salem Weaver Loom Office</h3>
-            <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-[#D4AF37]" /> Elampillai Main Road, Salem - 637502, Tamil Nadu</p>
-            <p className="flex items-center gap-2"><Phone className="w-4 h-4 text-[#D4AF37]" /> {settings.contact_phone}</p>
-            <p className="flex items-center gap-2"><Mail className="w-4 h-4 text-[#D4AF37]" /> {settings.contact_email}</p>
-          </div>
+    <div className="bg-[#FAF9F5] min-h-screen py-12">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+        <div className="text-center space-y-3 max-w-2xl mx-auto">
+          <h1 className="font-serif text-3xl sm:text-4xl font-bold text-slate-900">
+            Contact Customer Support
+          </h1>
+          <p className="text-xs text-stone-600">
+            Have a query regarding product sizing, custom saree borders, or your ongoing order shipment? We are here to assist you.
+          </p>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl border border-[#E2D9C8] shadow-md">
-          {submitted ? (
-            <div className="p-6 bg-green-50 text-green-800 text-xs font-bold rounded-2xl text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-green-700 mx-auto" />
-              <p>Thank you! Your enquiry has been sent. Our Salem team will contact you shortly.</p>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Contact Details Card */}
+          <div className="lg:col-span-5 bg-white p-6 sm:p-8 rounded-2xl border border-[#E5DFD3] shadow-2xs space-y-6">
+            <h2 className="font-serif text-lg font-bold text-slate-900 border-b border-stone-100 pb-3">
+              Get in Touch
+            </h2>
+
+            <div className="space-y-4 text-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-900 shrink-0">
+                  <Phone className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block">Phone Support</span>
+                  <a href={`tel:${storeSettings?.supportPhone}`} className="text-stone-600 hover:text-amber-900 font-mono">
+                    {storeSettings?.supportPhone || '+91 44 2498 7654'}
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-900 shrink-0">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block">Email Desk</span>
+                  <a href={`mailto:${storeSettings?.supportEmail}`} className="text-stone-600 hover:text-amber-900">
+                    {storeSettings?.supportEmail || 'care@nirai.in'}
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-900 shrink-0">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block">Heritage Flagship Store</span>
+                  <p className="text-stone-600 leading-relaxed">
+                    Nirai Handloom House, 42 Weaver Guild Street, Kanchipuram, Tamil Nadu 631501
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-900 shrink-0">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block">Working Hours</span>
+                  <p className="text-stone-600">Monday – Saturday: 9:30 AM to 7:30 PM IST</p>
+                </div>
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold text-[#2D1619] block mb-1">Associate Order ID (Optional)</label>
-                <select value={selectedOrder} onChange={(e) => setSelectedOrder(e.target.value)} className="w-full p-2.5 border border-[#D4AF37]/50 rounded-xl">
-                  <option value="">General Enquiry (No Order)</option>
-                  {orders.map(o => (
-                    <option key={o.id} value={o.order_number}>{o.order_number} ({o.customer_name})</option>
-                  ))}
-                </select>
-              </div>
+          </div>
 
-              <div>
-                <label className="font-bold text-[#2D1619] block mb-1">Your Name *</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2.5 border border-[#D4AF37]/50 rounded-xl" required />
+          {/* Contact Form */}
+          <div className="lg:col-span-7 bg-white p-6 sm:p-8 rounded-2xl border border-[#E5DFD3] shadow-2xs">
+            {isSubmitted ? (
+              <div className="text-center py-12 space-y-4">
+                <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <h3 className="font-serif text-xl font-bold text-slate-900">
+                  Message Sent Successfully!
+                </h3>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  Thank you for reaching out. Our customer care executive will contact you via email or WhatsApp shortly.
+                </p>
+                <button
+                  onClick={() => setIsSubmitted(false)}
+                  className="px-5 py-2.5 bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  Send Another Message
+                </button>
               </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+                <h2 className="font-serif text-lg font-bold text-slate-900 border-b border-stone-100 pb-3">
+                  Send an Inquiry
+                </h2>
 
-              <div>
-                <label className="font-bold text-[#2D1619] block mb-1">WhatsApp Phone Number *</label>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full p-2.5 border border-[#D4AF37]/50 rounded-xl" required />
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-semibold text-stone-700 mb-1">Your Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. Ananya Swaminathan"
+                      className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800"
+                    />
+                  </div>
 
-              <div>
-                <label className="font-bold text-[#2D1619] block mb-1">Enquiry Message *</label>
-                <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} className="w-full p-2.5 border border-[#D4AF37]/50 rounded-xl" required />
-              </div>
+                  <div>
+                    <label className="block font-semibold text-stone-700 mb-1">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98401 22334"
+                      className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800"
+                    />
+                  </div>
+                </div>
 
-              <button type="submit" className="w-full py-3 bg-[#2D1619] text-[#F4E8C1] font-bold rounded-xl flex items-center justify-center gap-1.5">
-                <Send className="w-4 h-4 text-[#D4AF37]" />
-                <span>Submit Support Ticket</span>
-              </button>
-            </form>
-          )}
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-stone-700 mb-1">Your Message *</label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="How can we assist you with your handloom selection?"
+                    className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800 resize-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Send className="w-4 h-4 text-amber-400" />
+                  <span>Submit Inquiry</span>
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </div>
     </div>

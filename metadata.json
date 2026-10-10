@@ -1,0 +1,6 @@
+{
+  "name": "Nirai - Where Tradition Feels Complete",
+  "description": "Premier South Indian traditional and contemporary ethnic clothing e-commerce platform with dynamic admin management, Tamil & English dual-language experience, and full order lifecycle tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

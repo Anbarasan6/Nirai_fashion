@@ -1,130 +1,122 @@
 export type Language = 'en' | 'ta';
 
-export interface ProductVariant {
-  id?: string;
-  color: string;
-  color_code?: string;
-  stock: number;
-  price?: number;
-  image?: string;
+export type UserRole = 'super_admin' | 'admin' | 'staff' | 'customer';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  password?: string;
+  avatar?: string;
+  addresses?: Address[];
+  createdAt: string;
+  isActive: boolean;
 }
 
-export interface Product {
+export interface Address {
   id: string;
-  sku?: string;
-  slug: string;
-  name_en: string;
-  name_ta?: string;
-  description_en?: string;
-  description_ta?: string;
-  category_id?: string;
-  price: number;
-  discount_price?: number;
-  fabric_type?: string;
-  is_in_stock: boolean;
-  stock_quantity: number;
-  is_featured: boolean;
-  is_new_arrival: boolean;
-  images: string[];
-  variants: ProductVariant[];
-  badge?: 'NEW' | 'BESTSELLER' | 'SALE' | 'LIMITED STOCK';
-  rating?: number;
-  review_count?: number;
-  created_at?: string;
+  fullName: string;
+  phone: string;
+  street: string;
+  landmark?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault?: boolean;
 }
 
 export interface Category {
   id: string;
-  name_en: string;
-  name_ta?: string;
   slug: string;
-  image_url?: string;
-  description_en?: string;
-  description_ta?: string;
-  is_active?: boolean;
-  created_at?: string;
-}
-
-export interface Address {
-  id?: string;
-  fullName?: string;
-  phone?: string;
-  street: string;
-  city: string;
-  state: string;
-  pincode: string;
-  landmark?: string;
-  isDefault?: boolean;
-}
-
-export interface Customer {
-  id: string;
-  name: string;
-  email?: string;
-  phone: string;
-  address?: Address;
-  total_orders?: number;
-  total_spent?: number;
-  created_at?: string;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'customer';
-  phone?: string;
-  addresses?: Address[];
-  created_at?: string;
-}
-
-export interface OrderItem {
-  product_id: string;
-  product_name: string;
-  name_ta?: string;
-  price: number;
-  quantity: number;
-  selected_variant?: string;
+  nameEn: string;
+  nameTa: string;
+  level: 1 | 2 | 3;
+  parentId?: string | null;
   image: string;
+  descriptionEn?: string;
+  descriptionTa?: string;
+  isActive: boolean;
+  itemCount?: number;
+  order?: number;
 }
 
-export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
-export type PaymentStatus = 'UNPAID' | 'VERIFYING' | 'PAID' | 'FAILED';
-export type PaymentMethod = 'UPI_QR' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'NET_BANKING' | 'COD';
-
-export interface Order {
+export interface ProductVariant {
   id: string;
-  order_number: string;
-  customer_id?: string;
-  customer_name: string;
-  phone: string;
-  email?: string;
-  shipping_address: Address;
-  items: OrderItem[];
-  subtotal: number;
-  discount: number;
-  shipping_fee: number;
-  total_amount: number;
-  status: OrderStatus;
-  payment_status: PaymentStatus;
-  payment_method: PaymentMethod;
-  utr_number?: string;
-  utr_proof_url?: string;
-  notes?: string;
-  created_at: string;
+  name: string; // e.g. "Maroon - Free Size" or "Size 40"
+  size?: string; // "S", "M", "L", "XL", "XXL", "Free Size", "40", "42"
+  color?: string; // "Maroon", "Temple Gold", "Peacock Blue", "Ivory White"
+  colorHex?: string;
+  sku: string;
+  stock: number;
+  priceModifier?: number; // +/- from base price
+  supplierId?: string; // Admin internal only
+  purchasePrice?: number; // Admin internal only
 }
 
-export interface Coupon {
+export interface ProductReview {
   id: string;
-  code: string;
-  discount_type: 'percentage' | 'fixed';
-  discount_value: number;
-  min_order_amount: number;
-  max_discount_amount?: number;
-  valid_till?: string;
-  is_active: boolean;
-  created_at?: string;
+  productId: string;
+  customerName: string;
+  rating: number; // 1 - 5
+  comment: string;
+  date: string;
+  verifiedPurchase: boolean;
 }
+
+export interface Product {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameTa: string;
+  slug: string;
+  descriptionEn: string;
+  descriptionTa: string;
+  shortDescEn: string;
+  shortDescTa: string;
+  categoryId: string; // Level 1 or 2 category
+  subCategoryId?: string;
+  brand: string;
+  images: string[];
+  basePrice: number; // MRP
+  regularDiscount: number; // % (e.g. 15 for 15% off)
+  specialDiscount: number; // % extra seasonal discount
+  finalPrice: number; // Auto-calculated
+  stock: number;
+  lowStockThreshold: number;
+  isFeatured: boolean;
+  isNewArrival?: boolean;
+  isActive: boolean;
+  fabric: string; // e.g. "Pure Mulberry Silk", "Chettinad Cotton", "Linen"
+  material: string;
+  style: string; // "Bridal", "Temple Festive", "Casual Workwear", "Ceremonial"
+  careInstructionsEn: string;
+  careInstructionsTa: string;
+  variants: ProductVariant[];
+  rating: number;
+  reviewCount: number;
+  reviews: ProductReview[];
+  // Internal Supplier sourcing info (ADMIN ONLY - never sent to storefront)
+  supplierId?: string;
+  purchaseCost?: number;
+  internalNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type OrderStatus =
+  | 'Pending'
+  | 'Confirmed'
+  | 'Processing'
+  | 'Shipped'
+  | 'Delivered'
+  | 'Cancelled'
+  | 'Returned';
+
+export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'PENDING_VERIFICATION';
+
+export type PaymentMethod = 'COD' | 'ONLINE_UPI' | 'ONLINE_CARD' | 'BANK_TRANSFER';
 
 export interface BankDetails {
   bankName: string;
@@ -134,63 +126,220 @@ export interface BankDetails {
   branch: string;
 }
 
-export interface HeroSlide {
-  id?: string;
-  image: string;
+export interface UpiDetails {
+  upiId: string;
+  merchantName: string;
+  qrCodeNote?: string;
+}
+
+export interface ShippingRules {
+  tamilNaduStandard: number;
+  tamilNaduExpress: number;
+  indiaStandard: number;
+  indiaExpress: number;
+}
+
+export interface OrderItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  variantId?: string;
+  variantName?: string;
+  size?: string;
+  color?: string;
+  sku: string;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+}
+
+export interface ShippingDetails {
+  courierName: string;
+  trackingId: string;
+  trackingUrl: string;
+  shippedDate?: string;
+  estimatedDelivery?: string;
+  deliveredDate?: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string; // e.g. "NIRAI-2026-9042"
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  shippingAddress: Address;
+  items: OrderItem[];
+  subtotal: number;
+  discountAmount: number;
+  couponCode?: string;
+  shippingFee: number;
+  freeShippingApplied: boolean;
+  grandTotal: number;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  paymentMethod: PaymentMethod;
+  utrNumber?: string;
+  paymentProofUrl?: string;
+  shippingDetails?: ShippingDetails;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CartItem {
+  productId: string;
+  variantId: string;
+  quantity: number;
+  product: Product;
+  selectedVariant: ProductVariant;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  city: string;
+  state: string;
+  leadTimeDays: number;
+  notes?: string;
+  isActive: boolean;
+  productsSuppliedCount?: number;
+}
+
+export interface StockMovement {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  type: 'RECEIPT' | 'SALE' | 'ADJUSTMENT' | 'DAMAGE' | 'RETURN';
+  quantityDelta: number; // positive or negative
+  previousStock: number;
+  newStock: number;
+  reason: string;
+  performedBy: string;
+  timestamp: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  description: string;
+  discountType: 'PERCENTAGE' | 'FIXED';
+  discountValue: number;
+  minOrderAmount: number;
+  maxDiscountAmount?: number;
+  validUntil: string;
+  isActive: boolean;
+  usageCount: number;
+}
+
+export interface Banner {
+  id: string;
   titleEn: string;
   titleTa: string;
   subtitleEn: string;
   subtitleTa: string;
-  ctaUrl: string;
+  badgeEn?: string;
+  badgeTa?: string;
+  ctaTextEn: string;
+  ctaTextTa: string;
+  ctaLink: string;
+  imageUrl: string;
+  bgColor?: string;
+  isActive: boolean;
+  position: 'hero' | 'promo' | 'festival';
 }
 
-export interface CmsFaqItem {
-  q_en: string;
-  q_ta: string;
-  a_en: string;
-  a_ta: string;
+export interface MediaItem {
+  id: string;
+  url: string;
+  publicId: string;
+  filename: string;
+  fileSize: number; // in bytes
+  width?: number;
+  height?: number;
+  format: string; // 'png' | 'jpeg' | 'webp' | 'svg'
+  category: 'logos' | 'hero' | 'categories' | 'products' | 'promotions' | 'general';
+  altText?: string;
+  createdAt: string;
+}
+
+export interface LogoSettings {
+  desktopLogoUrl?: string; // recommended 400x120px approx 3:1
+  mobileLogoUrl?: string; // recommended 160x160px icon-style
+  altText: string;
+}
+
+export interface HeroSlide {
+  id: string;
+  titleEn: string;
+  titleTa: string;
+  subtitleEn: string;
+  subtitleTa: string;
+  badgeEn?: string;
+  badgeTa?: string;
+  ctaTextEn: string;
+  ctaTextTa: string;
+  ctaLink: string;
+  desktopImage: string; // 1920x700px
+  mobileImage?: string; // 1080x1350px
+  isActive: boolean;
+  order: number;
+}
+
+export interface PromoBannerConfig {
+  id: string;
+  titleEn: string;
+  titleTa: string;
+  subtitleEn: string;
+  subtitleTa: string;
+  badgeEn?: string;
+  badgeTa?: string;
+  ctaTextEn: string;
+  ctaTextTa: string;
+  ctaLink: string;
+  desktopImage: string; // 1600x600px
+  mobileImage?: string; // 1080x900px
+  countdownDate?: string; // ISO date e.g. 2026-10-31T23:59:59Z
+  isActive: boolean;
+}
+
+export type HomepageSectionId =
+  | 'hero'
+  | 'categories'
+  | 'featured'
+  | 'promo'
+  | 'new_arrivals'
+  | 'why_us'
+  | 'final_cta';
+
+export interface HomepageSectionItem {
+  id: HomepageSectionId;
+  label: string;
+  isVisible: boolean;
+  order: number;
 }
 
 export interface StoreSettings {
-  id: string;
-  store_name: string;
-  upi_id: string;
-  upi_name: string;
-  qr_code_url: string;
-  bank_details: BankDetails;
-  contact_phone: string;
-  contact_email: string;
-  announcement_en: string;
-  announcement_ta: string;
-  free_shipping_threshold?: number;
-  hero_slides?: HeroSlide[];
-  custom_texts_en?: Record<string, string>;
-  custom_texts_ta?: Record<string, string>;
-  faqs?: CmsFaqItem[];
-}
-
-export interface CartItem {
-  product: Product;
-  quantity: number;
-  selected_variant?: string;
-}
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  date: string;
-  isRead: boolean;
-  link?: string;
-}
-
-export interface ReviewItem {
-  id: string;
-  productId: string;
-  userName: string;
-  rating: number;
-  comment: string;
-  date: string;
-  isVerifiedPurchase: boolean;
-  userPhoto?: string;
+  storeName: string;
+  taglineEn: string;
+  taglineTa: string;
+  logo: LogoSettings;
+  heroSlides: HeroSlide[];
+  promoBanner: PromoBannerConfig;
+  homepageSections: HomepageSectionItem[];
+  freeShippingThreshold: number; // ₹1500 default
+  standardShippingFee: number; // ₹120 if under threshold
+  shippingRules?: ShippingRules;
+  bankDetails?: BankDetails;
+  upiDetails?: UpiDetails;
+  announcementEn: string;
+  announcementTa: string;
+  supportPhone: string;
+  supportEmail: string;
+  isAnnouncementActive: boolean;
 }

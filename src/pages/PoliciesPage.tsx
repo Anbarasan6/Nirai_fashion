@@ -1,161 +1,79 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Truck, RefreshCw, HelpCircle, ChevronDown, ChevronUp, Send } from 'lucide-react';
-import { useShop } from '../context/ShopContext';
+import React from 'react';
+import { Shield, Truck, RefreshCw, FileText } from 'lucide-react';
 
-export const PoliciesPage: React.FC = () => {
-  const { t } = useShop();
+interface PoliciesPageProps {
+  section?: 'privacy' | 'shipping' | 'refund' | 'terms';
+}
 
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [enquirySent, setEnquirySent] = useState(false);
-
-  const faqs = [
-    {
-      q: 'How does the 0% Gateway Fee UPI QR Payment work?',
-      a: 'During checkout, you will see an instant UPI QR Code and UPI ID (nirai@upi). Scan with GPay, PhonePe, Paytm, or BHIM, enter the exact amount, and input your 12-digit UTR reference number. Our team verifies the transaction instantly without any 2-3% payment gateway surcharges!'
-    },
-    {
-      q: 'Are NIRAI silk sarees certified for authenticity?',
-      a: 'Yes! Every saree from NIRAI is 100% handcrafted in Salem and Elampillai using high-density mulberry silk yarn and pure metallic zari.'
-    },
-    {
-      q: 'What is the standard shipping delivery timeline?',
-      a: 'Orders are dispatched within 24 hours of payment verification. Standard delivery across South India takes 2-3 business days, and rest of India takes 4-5 days via BlueDart or DTDC.'
-    },
-    {
-      q: 'What is your Return and Exchange Policy?',
-      a: 'We offer a hassle-free 7-day exchange guarantee if the product arrives damaged or defective. Simply contact our support team on WhatsApp or email.'
-    }
-  ];
-
-  const handleEnquirySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setEnquirySent(true);
-  };
-
+export const PoliciesPage: React.FC<PoliciesPageProps> = ({ section = 'privacy' }) => {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-12">
-      
-      {/* Title */}
-      <div className="text-center space-y-2">
-        <h1 className="font-serif-luxury text-2xl sm:text-4xl font-extrabold text-[#2D1619]">
-          {t('policies')}
-        </h1>
-        <p className="text-xs text-[#6B5B5E]">
-          Transparency, Weaver Trust & Customer Satisfaction
-        </p>
-      </div>
-
-      {/* Policy Badges */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="p-6 bg-white rounded-2xl border border-[#E2D9C8] shadow-sm space-y-3">
-          <div className="p-3 bg-[#F4E8C1] text-[#4A0E17] rounded-full w-fit">
-            <Truck className="w-6 h-6" />
-          </div>
-          <h3 className="font-serif-luxury text-base font-bold text-[#2D1619]">
-            Shipping & Delivery
-          </h3>
-          <p className="text-xs text-[#6B5B5E] leading-relaxed">
-            Free shipping on orders above ₹2,999. Express courier partners BlueDart, DTDC, and Professional Couriers.
+    <div className="bg-[#FAF9F5] min-h-screen py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+        <div className="text-center space-y-2">
+          <h1 className="font-serif text-3xl font-bold text-slate-900">
+            Store Policies & Legal Terms
+          </h1>
+          <p className="text-xs text-stone-500">
+            Transparent guidelines governing shipping, quality guarantee, direct UPI transactions, and data protection.
           </p>
         </div>
 
-        <div className="p-6 bg-white rounded-2xl border border-[#E2D9C8] shadow-sm space-y-3">
-          <div className="p-3 bg-[#F4E8C1] text-[#4A0E17] rounded-full w-fit">
-            <RefreshCw className="w-6 h-6" />
-          </div>
-          <h3 className="font-serif-luxury text-base font-bold text-[#2D1619]">
-            7-Day Returns & Exchange
-          </h3>
-          <p className="text-xs text-[#6B5B5E] leading-relaxed">
-            Guaranteed replacements for weaving defects or shipping damage with unboxing video verification.
-          </p>
-        </div>
-
-        <div className="p-6 bg-white rounded-2xl border border-[#E2D9C8] shadow-sm space-y-3">
-          <div className="p-3 bg-[#F4E8C1] text-[#4A0E17] rounded-full w-fit">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <h3 className="font-serif-luxury text-base font-bold text-[#2D1619]">
-            0% Gateway Fee Guarantee
-          </h3>
-          <p className="text-xs text-[#6B5B5E] leading-relaxed">
-            Instant 0% surcharge via direct UPI QR code scanner & bank transfer reference validation.
-          </p>
-        </div>
-      </div>
-
-      {/* Searchable FAQ Accordion */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#E2D9C8] shadow-md space-y-6">
-        <div className="flex items-center gap-2 border-b border-[#F2ECDF] pb-4">
-          <HelpCircle className="w-5 h-5 text-[#D4AF37]" />
-          <h3 className="font-serif-luxury text-xl font-bold text-[#2D1619]">
-            Frequently Asked Questions (FAQ)
-          </h3>
-        </div>
-
-        <div className="space-y-3">
-          {faqs.map((faq, idx) => (
-            <div key={idx} className="border border-[#E2D9C8] rounded-xl overflow-hidden">
-              <button
-                onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                className="w-full p-4 bg-[#FBF9F5] text-left text-xs sm:text-sm font-bold text-[#2D1619] flex justify-between items-center hover:bg-[#ECE6D9] transition"
-              >
-                <span>{faq.q}</span>
-                {openFaq === idx ? <ChevronUp className="w-4 h-4 text-[#4A0E17]" /> : <ChevronDown className="w-4 h-4 text-[#8A7B7E]" />}
-              </button>
-              {openFaq === idx && (
-                <div className="p-4 bg-white text-xs text-[#4A0E17] leading-relaxed border-t border-[#E2D9C8]">
-                  {faq.a}
-                </div>
-              )}
+        {/* Policy Section Cards */}
+        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-[#E5DFD3] shadow-2xs space-y-8 text-xs text-stone-700 leading-relaxed">
+          {/* Shipping Policy */}
+          <div className="space-y-3 border-b border-stone-200 pb-6">
+            <div className="flex items-center gap-2 text-amber-900 font-bold text-base font-serif">
+              <Truck className="w-5 h-5" />
+              <h2>Shipping & Dispatch Policy</h2>
             </div>
-          ))}
+            <p>
+              All Nirai orders are dispatched via premier courier partners (BlueDart, Delhivery, Speed Post). Orders over ₹1,500 qualify for FREE standard shipping across India.
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-stone-600">
+              <li>Standard Shipping: Delivered within 3 to 5 business days.</li>
+              <li>Express Priority Delivery: Delivered within 24 to 48 hours (₹199 flat fee).</li>
+              <li>Handloom weaving/custom border orders may take up to 7 business days before shipment.</li>
+            </ul>
+          </div>
+
+          {/* Direct Payment & UPI Refund Policy */}
+          <div className="space-y-3 border-b border-stone-200 pb-6">
+            <div className="flex items-center gap-2 text-amber-900 font-bold text-base font-serif">
+              <RefreshCw className="w-5 h-5" />
+              <h2>Refunds & Return Policy</h2>
+            </div>
+            <p>
+              We stand by the master quality of our silk and cotton weaves. If you receive a damaged or defectively woven item, you may request a replacement or refund within 7 days of delivery.
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-stone-600">
+              <li>Direct UPI Refunds are processed directly back to your source GPay/PhonePe account within 24-48 hours of item receipt.</li>
+              <li>Items must be returned unworn, with original silk weaving tags intact.</li>
+            </ul>
+          </div>
+
+          {/* Data Privacy Policy */}
+          <div className="space-y-3 border-b border-stone-200 pb-6">
+            <div className="flex items-center gap-2 text-amber-900 font-bold text-base font-serif">
+              <Shield className="w-5 h-5" />
+              <h2>Privacy & Data Security</h2>
+            </div>
+            <p>
+              Your personal shipping information, phone number, and UPI transaction reference numbers are strictly protected and never shared with third-party advertisers.
+            </p>
+          </div>
+
+          {/* Terms of Service */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-amber-900 font-bold text-base font-serif">
+              <FileText className="w-5 h-5" />
+              <h2>Terms of Service</h2>
+            </div>
+            <p>
+              By placing an order on Nirai, you agree to our direct payment verification model. Orders are confirmed upon verification of your submitted 12-digit UTR reference ID against our bank statement.
+            </p>
+          </div>
         </div>
       </div>
-
-      {/* Contact Form */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#E2D9C8] shadow-md space-y-4">
-        <h3 className="font-serif-luxury text-xl font-bold text-[#2D1619]">
-          Contact Weaver Support
-        </h3>
-
-        {enquirySent ? (
-          <div className="p-4 bg-green-50 border border-green-200 text-green-800 text-xs font-bold rounded-xl text-center">
-            ✓ Your message has been sent successfully! Our Salem team will contact you shortly.
-          </div>
-        ) : (
-          <form onSubmit={handleEnquirySubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Your Name"
-                className="text-xs p-3 border border-[#D4AF37]/50 rounded-xl"
-                required
-              />
-              <input
-                type="tel"
-                placeholder="Phone Number"
-                className="text-xs p-3 border border-[#D4AF37]/50 rounded-xl"
-                required
-              />
-            </div>
-            <textarea
-              placeholder="How can we assist your saree purchase?"
-              rows={3}
-              className="w-full text-xs p-3 border border-[#D4AF37]/50 rounded-xl"
-              required
-            />
-            <button
-              type="submit"
-              className="px-6 py-3 bg-[#2D1619] text-[#F4E8C1] text-xs font-bold rounded-xl hover:bg-[#4A0E17] flex items-center gap-1.5"
-            >
-              <Send className="w-4 h-4 text-[#D4AF37]" />
-              <span>Send Message</span>
-            </button>
-          </form>
-        )}
-      </div>
-
     </div>
   );
 };

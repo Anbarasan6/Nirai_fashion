@@ -1,168 +1,227 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { Phone, Mail, MapPin, Shield, Award, Sparkles, RefreshCw, Heart } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
+import {
+  MapPin,
+  Instagram,
+  Facebook,
+  Twitter,
+  MessageCircle,
+} from 'lucide-react';
 
 export const Footer: React.FC = () => {
-  const { language, t, settings } = useShop();
+  const navigate = useNavigate();
+  const { setSelectedCategory, storeSettings, setViewMode } = useShop();
 
   return (
-    <footer className="bg-[#1E0B0E] text-[#ECE6D9] pt-16 pb-20 lg:pb-8 border-t-4 border-[#D4AF37]">
+    <footer className="bg-[#1C0D0F] text-[#E8DED1] border-t border-[#381B1F] mt-16 pt-16 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Value Proposition Badges */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pb-12 border-b border-[#D4AF37]/20 text-center">
-          <div className="flex flex-col items-center p-4 rounded-xl bg-[#2D1619]/60 border border-[#D4AF37]/20">
-            <div className="p-3 bg-[#4A0E17] text-[#D4AF37] rounded-full mb-3">
-              <Award className="w-6 h-6" />
-            </div>
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] mb-1">
-              {language === 'ta' ? '100% தூய கைத்தறி பட்டு' : '100% Pure Handloom Silk'}
-            </h4>
-            <p className="text-xs text-[#A09295]">
-              {language === 'ta' ? 'உண்மையான சேலம் மல்பெரி பட்டு நெசவு' : 'Authentic Salem mulberry silk & pure zari motifs'}
-            </p>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-10 pb-12 border-b border-[#381B1F]">
+          {/* Brand Info & Logo */}
+          <div className="md:col-span-2 space-y-4">
+            <Link to="/" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+              {storeSettings.logo?.desktopLogoUrl ? (
+                <img
+                  src={storeSettings.logo.desktopLogoUrl}
+                  alt={storeSettings.logo.altText || 'Nirai Handlooms'}
+                  className="h-10 w-auto max-w-[200px] object-contain filter brightness-110"
+                />
+              ) : (
+                <span className="text-2xl font-serif font-bold tracking-widest text-amber-200 block">
+                  NIRAI
+                </span>
+              )}
+            </Link>
 
-          <div className="flex flex-col items-center p-4 rounded-xl bg-[#2D1619]/60 border border-[#D4AF37]/20">
-            <div className="p-3 bg-[#4A0E17] text-[#D4AF37] rounded-full mb-3">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] mb-1">
-              {language === 'ta' ? 'நேரடி நெசவாளர் விலை' : 'Direct Weaver Pricing'}
-            </h4>
-            <p className="text-xs text-[#A09295]">
-              {language === 'ta' ? 'இடைத்தரகர்கள் இல்லாத நியாயமான விலை' : 'Zero middleman markup, straight from looms'}
+            <p className="text-xs text-stone-300 leading-relaxed max-w-sm">
+              Nirai honors authentic South Indian handloom traditions. Certified pure silk weaves, Salem wedding dhotis, and time-tested earthen cottons curated directly from artisan looms.
             </p>
-          </div>
 
-          <div className="flex flex-col items-center p-4 rounded-xl bg-[#2D1619]/60 border border-[#D4AF37]/20">
-            <div className="p-3 bg-[#4A0E17] text-[#D4AF37] rounded-full mb-3">
-              <Shield className="w-6 h-6" />
+            <div className="pt-1 text-xs text-stone-400 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>42 Weaver Guild Street, Kanchipuram, Tamil Nadu 631501</span>
+              </div>
             </div>
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] mb-1">
-              {language === 'ta' ? '0% கட்டண UPI செக்அவுட்' : '0% Gateway Fee UPI'}
-            </h4>
-            <p className="text-xs text-[#A09295]">
-              {language === 'ta' ? 'உடனடி QR ஸ்கேன் & UTR சரிபார்ப்பு' : 'Instant QR code scan with 0% gateway fee'}
-            </p>
-          </div>
 
-          <div className="flex flex-col items-center p-4 rounded-xl bg-[#2D1619]/60 border border-[#D4AF37]/20">
-            <div className="p-3 bg-[#4A0E17] text-[#D4AF37] rounded-full mb-3">
-              <RefreshCw className="w-6 h-6" />
-            </div>
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] mb-1">
-              {language === 'ta' ? 'எளிதான டெலிவரி & கண்காணிப்பு' : 'Easy Delivery & Tracking'}
-            </h4>
-            <p className="text-xs text-[#A09295]">
-              {language === 'ta' ? 'பாதுகாப்பான பேக்கிங் மற்றும் வாட்ஸ்அப் புதுப்பிப்புகள்' : 'Safe express shipping across India & abroad'}
-            </p>
-          </div>
-        </div>
-
-        {/* Footer Navigation Columns */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 py-12">
-          
-          {/* Brand & Weaver Heritage */}
-          <div className="space-y-4 md:col-span-1">
-            <h3 className="font-serif-luxury text-2xl font-extrabold text-[#D4AF37]">
-              NIRAI
-            </h3>
-            <p className="text-xs text-[#C5B7BA] leading-relaxed">
-              {language === 'ta'
-                ? 'நிறை பட்டு - இளம்பிள்ளை மற்றும் காஞ்சிபுரம் பாரம்பரிய பட்டு சேலைகளின் இணையற்ற தொகுப்பு.'
-                : 'NIRAI celebrates the grand heritage of South Indian textile craftsmanship, bringing master weaver sarees straight to your doorstep.'}
-            </p>
-            <div className="pt-2 text-xs text-[#D4AF37] font-semibold flex items-center gap-1.5">
-              <Heart className="w-4 h-4 fill-[#D4AF37]" />
-              <span>{language === 'ta' ? 'கைத்தறி நெசவாளர்களுக்கு ஆதரவளிக்கவும்' : 'Supporting 500+ Weaver Families'}</span>
+            {/* Social Media Icons */}
+            <div className="pt-2 flex items-center gap-3 text-stone-400">
+              <a
+                href="#instagram"
+                onClick={(e) => e.preventDefault()}
+                aria-label="Instagram"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 hover:text-amber-300 flex items-center justify-center transition-colors"
+              >
+                <Instagram className="w-4 h-4" />
+              </a>
+              <a
+                href="#facebook"
+                onClick={(e) => e.preventDefault()}
+                aria-label="Facebook"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 hover:text-amber-300 flex items-center justify-center transition-colors"
+              >
+                <Facebook className="w-4 h-4" />
+              </a>
+              <a
+                href="#twitter"
+                onClick={(e) => e.preventDefault()}
+                aria-label="Twitter"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 hover:text-amber-300 flex items-center justify-center transition-colors"
+              >
+                <Twitter className="w-4 h-4" />
+              </a>
+              <a
+                href="#whatsapp"
+                onClick={(e) => e.preventDefault()}
+                aria-label="WhatsApp"
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 hover:text-amber-300 flex items-center justify-center transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </a>
             </div>
           </div>
 
-          {/* Quick Links */}
-          <div className="space-y-3">
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] uppercase tracking-wider">
-              Quick Links
-            </h4>
-            <ul className="space-y-2 text-xs text-[#C5B7BA]">
-              <li>
-                <Link to="/" className="hover:text-[#D4AF37] transition">{t('home')}</Link>
-              </li>
-              <li>
-                <Link to="/catalog" className="hover:text-[#D4AF37] transition">{t('catalog')}</Link>
-              </li>
-              <li>
-                <Link to="/deals" className="hover:text-[#D4AF37] transition">Offers & Deals</Link>
-              </li>
-              <li>
-                <Link to="/about" className="hover:text-[#D4AF37] transition">About Us</Link>
-              </li>
-              <li>
-                <Link to="/contact" className="hover:text-[#D4AF37] transition">Contact Support</Link>
-              </li>
-              <li>
-                <Link to="/tracking" className="hover:text-[#D4AF37] transition">{t('trackOrder')}</Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Customer Policies */}
-          <div className="space-y-3">
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] uppercase tracking-wider">
-              Legal & Policies
-            </h4>
-            <ul className="space-y-2 text-xs text-[#C5B7BA]">
-              <li>
-                <Link to="/privacy" className="hover:text-[#D4AF37] transition">Privacy Policy</Link>
-              </li>
-              <li>
-                <Link to="/terms" className="hover:text-[#D4AF37] transition">Terms & Conditions</Link>
-              </li>
-              <li>
-                <Link to="/shipping-policy" className="hover:text-[#D4AF37] transition">Shipping Policy</Link>
-              </li>
-              <li>
-                <Link to="/return-policy" className="hover:text-[#D4AF37] transition">Return & Exchange</Link>
-              </li>
-              <li>
-                <Link to="/faq" className="hover:text-[#D4AF37] transition">FAQ Help Center</Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Contact Details */}
-          <div className="space-y-3">
-            <h4 className="font-serif-luxury text-sm font-bold text-[#F4E8C1] uppercase tracking-wider">
-              {t('contactUs')}
-            </h4>
-            <ul className="space-y-2.5 text-xs text-[#C5B7BA]">
-              <li className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
-                <span>Nirai Silk Looms, Main Road, Elampillai, Salem - 637502, Tamil Nadu, India.</span>
-              </li>
-              <li className="flex items-center gap-2.5">
-                <Phone className="w-4 h-4 text-[#D4AF37] shrink-0" />
-                <span>{settings.contact_phone}</span>
-              </li>
-              <li className="flex items-center gap-2.5">
-                <Mail className="w-4 h-4 text-[#D4AF37] shrink-0" />
-                <span>{settings.contact_email}</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        {/* Bottom Bar & Copyright */}
-        <div className="pt-8 border-t border-[#D4AF37]/20 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-[#A09295]">
+          {/* Heritage Weaves */}
           <div>
-            © {new Date().getFullYear()} NIRAI Handloom Silks & Sarees. All Rights Reserved.
+            <h5 className="font-serif text-xs font-semibold uppercase tracking-wider text-amber-300 mb-4">
+              Heritage Weaves
+            </h5>
+            <ul className="space-y-2.5 text-xs text-stone-300">
+              <li>
+                <Link
+                  to="/catalog?category=sarees"
+                  onClick={() => {
+                    setSelectedCategory('cat-sarees');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Kanchipuram Silk Sarees
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/catalog?category=cotton"
+                  onClick={() => {
+                    setSelectedCategory('cat-cotton');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Chettinad Handloom Cottons
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/catalog?category=vesti"
+                  onClick={() => {
+                    setSelectedCategory('cat-vesti');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Salem Royal Double Vestis
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/catalog?category=kids"
+                  onClick={() => {
+                    setSelectedCategory('cat-kids');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Pattu Pavadai & Kids
+                </Link>
+              </li>
+            </ul>
           </div>
-          <div className="font-serif-luxury text-[#D4AF37] font-semibold text-center">
-            {language === 'ta' ? '✦ நெசவாளர் பாரம்பரியம் வாழ்க ✦' : '✦ Honoring Master Weavers ✦'}
+
+          {/* Orders & Policies */}
+          <div>
+            <h5 className="font-serif text-xs font-semibold uppercase tracking-wider text-amber-300 mb-4">
+              Orders & Information
+            </h5>
+            <ul className="space-y-2.5 text-xs text-stone-300">
+              <li>
+                <Link
+                  to="/tracking"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Track Your Order
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/about"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Our Handloom Heritage
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/contact"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Contact Support Desk
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/policies"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="hover:text-amber-200 transition-colors"
+                >
+                  Privacy, Returns & Shipping Policies
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Administration Portal */}
+          <div>
+            <h5 className="font-serif text-xs font-semibold uppercase tracking-wider text-amber-300 mb-4">
+              Administration
+            </h5>
+            <ul className="space-y-2.5 text-xs text-stone-300">
+              <li>
+                <button
+                  onClick={() => {
+                    setViewMode('admin');
+                    navigate('/admin/dashboard');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-amber-200 text-amber-300/90 underline underline-offset-2 transition-colors text-left font-medium cursor-pointer"
+                >
+                  Admin Operations Console
+                </button>
+              </li>
+              <li>
+                <span className="text-stone-400">Direct UPI Verification Engine</span>
+              </li>
+              <li>
+                <span className="text-stone-400">Cloudinary CDN & Supabase Sync</span>
+              </li>
+            </ul>
           </div>
         </div>
 
+        {/* Bottom Bar */}
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-[11px] text-stone-400 gap-3">
+          <p>© 2026 NIRAI Handlooms & Apparel Private Limited. All rights reserved.</p>
+          <p className="flex items-center gap-3">
+            <span>Direct Master Weaves</span>
+            <span>·</span>
+            <span>Verified Direct UPI Payments</span>
+            <span>·</span>
+            <span>Fast Express Dispatch</span>
+          </p>
+        </div>
       </div>
     </footer>
   );

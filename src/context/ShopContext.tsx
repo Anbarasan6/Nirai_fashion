@@ -1,156 +1,237 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { Product, Category, Order, Coupon, StoreSettings, CartItem, Language, User } from '../types';
-import { StorageService } from '../services/storage';
-import { getTranslation } from '../translations';
+import {
+  Language,
+  User,
+  CartItem,
+  Product,
+  ProductVariant,
+  Coupon,
+  StoreSettings,
+} from '../types';
+import { StorageService, subscribeToStore } from '../services/storage';
+import { getT } from '../data/translations';
+
+export interface ToastItem {
+  id: string;
+  message: string;
+  type: 'success' | 'info' | 'error';
+}
 
 interface ShopContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: any, params?: Record<string, string | number>) => string;
+  t: ReturnType<typeof getT>;
+  currentUser: User | null;
+  setCurrentUser: (user: User | null) => void;
+  isAdmin: boolean;
+  viewMode: 'storefront' | 'admin';
+  setViewMode: (mode: 'storefront' | 'admin') => void;
+  adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers';
+  setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers') => void;
   
-  user: User | null;
-  loginUser: (email: string, name?: string) => void;
-  registerUser: (name: string, email: string, phone: string) => void;
-  logoutUser: () => void;
-
+  // Auth Modal
+  isAuthModalOpen: boolean;
+  setIsAuthModalOpen: (open: boolean) => void;
+  authModalMode: 'login' | 'register';
+  openAuthModal: (mode?: 'login' | 'register') => void;
+  logout: () => void;
+  
+  // Navigation / Pages in Storefront
+  activeTab: 'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint';
+  setActiveTab: (tab: 'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint') => void;
+  selectedProductSlug: string | null;
+  openProduct: (slug: string) => void;
+  openPdp: (slug: string) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (cat: string | null) => void;
+  trackingOrderId: string | null;
+  setTrackingOrderId: (id: string | null) => void;
+  openTracking: (orderId?: string) => void;
+  
+  // Cart
   cart: CartItem[];
-  addToCart: (product: Product, quantity?: number, selected_variant?: string) => void;
-  removeFromCart: (productId: string, selected_variant?: string) => void;
-  updateCartQuantity: (productId: string, quantity: number, selected_variant?: string) => void;
+  addToCart: (product: Product, variant?: ProductVariant, quantity?: number) => void;
+  updateCartQuantity: (productId: string, variantId: string, quantity: number) => void;
+  removeFromCart: (productId: string, variantId: string) => void;
   clearCart: () => void;
-  cartTotal: number;
-  cartCount: number;
-
-  wishlist: Product[];
-  toggleWishlist: (product: Product) => void;
-  isInWishlist: (productId: string) => boolean;
-  
   isCartOpen: boolean;
   setIsCartOpen: (open: boolean) => void;
-
-  categories: Category[];
-  products: Product[];
-  orders: Order[];
-  settings: StoreSettings;
-  coupons: Coupon[];
-
+  
+  // Pricing & Free Delivery
+  cartSubtotal: number;
+  cartItemCount: number;
+  freeShippingThreshold: number;
+  isFreeShipping: boolean;
+  amountNeededForFreeShipping: number;
+  shippingFee: number;
   appliedCoupon: Coupon | null;
   applyCoupon: (code: string) => { success: boolean; message: string };
   removeCoupon: () => void;
-  discountAmount: number;
-  shippingFee: number;
-  grandTotal: number;
+  couponDiscount: number;
+  cartGrandTotal: number;
 
-  refreshData: () => Promise<void>;
-  checkPincodeDelivery: (pincode: string) => { available: boolean; estimatedDate: string };
+  // Wishlist
+  wishlist: string[];
+  toggleWishlist: (productId: string) => void;
+  isInWishlist: (productId: string) => boolean;
+
+  // Search & Global state
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  toasts: ToastItem[];
+  showToast: (message: string, type?: 'success' | 'info' | 'error') => void;
+  storeSettings: StoreSettings;
+  products: Product[];
+  refreshData: () => void;
 }
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<Language>('en');
-  const [user, setUser] = useState<User | null>(() => {
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const users = StorageService.getUsers();
+    return users.find((u) => u.role === 'customer') || null;
+  });
+  const [viewMode, setViewMode] = useState<'storefront' | 'admin'>('storefront');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
+  const [selectedProductSlug, setSelectedProductSlug] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
+
+  // Auth modal state
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+
+  const openAuthModal = (mode: 'login' | 'register' = 'login') => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    showToast('Signed out of account', 'info');
+  };
+
+  // Cart
+  const [cart, setCart] = useState<CartItem[]>(() => {
     try {
-      const stored = localStorage.getItem('nirai_customer_user');
-      return stored ? JSON.parse(stored) : null;
+      const stored = localStorage.getItem('nirai_cart');
+      return stored ? JSON.parse(stored) : [];
     } catch {
-      return null;
+      return [];
     }
   });
-
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [wishlist, setWishlist] = useState<Product[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  
-  const [categories, setCategories] = useState<Category[]>(StorageService.getCategories());
-  const [products, setProducts] = useState<Product[]>(StorageService.getProducts());
-  const [orders, setOrders] = useState<Order[]>(StorageService.getOrders());
-  const [settings, setSettings] = useState<StoreSettings>(StorageService.getSettings());
-  const [coupons, setCoupons] = useState<Coupon[]>(StorageService.getCoupons());
-  
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
+  // Wishlist & Store
+  const [wishlist, setWishlist] = useState<string[]>(() => StorageService.getWishlist());
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => StorageService.getSettings());
+  const [products, setProducts] = useState<Product[]>(() => StorageService.getProducts());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // Sync cart to localStorage
   useEffect(() => {
-    const unsubscribe = StorageService.subscribe(() => {
-      setCategories([...StorageService.getCategories()]);
-      setProducts([...StorageService.getProducts()]);
-      setOrders([...StorageService.getOrders()]);
-      setSettings({ ...StorageService.getSettings() });
-      setCoupons([...StorageService.getCoupons()]);
+    try {
+      localStorage.setItem('nirai_cart', JSON.stringify(cart));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [cart]);
+
+  // Subscribe to storage changes across the app
+  const refreshData = () => {
+    setProducts(StorageService.getProducts());
+    setStoreSettings(StorageService.getSettings());
+    setWishlist(StorageService.getWishlist());
+  };
+
+  useEffect(() => {
+    const unsubscribe = subscribeToStore(() => {
+      refreshData();
     });
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
-  const refreshData = async () => {
-    await StorageService.syncWithSupabase();
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3800);
   };
 
-  const loginUser = (email: string, name?: string) => {
-    const newUser: User = {
-      id: `usr_${Date.now()}`,
-      email,
-      name: name || email.split('@')[0],
-      role: 'customer',
-      created_at: new Date().toISOString()
+  const isAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'admin' || currentUser?.role === 'staff';
+
+  // Navigation helpers
+  const openProduct = (slug: string) => {
+    setSelectedProductSlug(slug);
+    setActiveTab('pdp');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openTracking = (orderId?: string) => {
+    if (orderId) setTrackingOrderId(orderId);
+    setActiveTab('tracking');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Cart operations
+  const addToCart = (product: Product, variant?: ProductVariant, quantity: number = 1) => {
+    const selectedVariant = variant || product.variants[0] || {
+      id: 'default',
+      name: 'Standard',
+      sku: product.sku,
+      stock: product.stock,
     };
-    setUser(newUser);
-    localStorage.setItem('nirai_customer_user', JSON.stringify(newUser));
-  };
 
-  const registerUser = (name: string, email: string, phone: string) => {
-    const newUser: User = {
-      id: `usr_${Date.now()}`,
-      email,
-      name,
-      phone,
-      role: 'customer',
-      created_at: new Date().toISOString()
-    };
-    setUser(newUser);
-    localStorage.setItem('nirai_customer_user', JSON.stringify(newUser));
-  };
-
-  const logoutUser = () => {
-    setUser(null);
-    localStorage.removeItem('nirai_customer_user');
-  };
-
-  const t = (key: any, params?: Record<string, string | number>) => {
-    const overrides = language === 'ta' ? settings?.custom_texts_ta : settings?.custom_texts_en;
-    return getTranslation(language, key, params, overrides);
-  };
-
-  const addToCart = (product: Product, quantity = 1, selected_variant?: string) => {
-    setCart(prev => {
+    setCart((prev) => {
       const existingIdx = prev.findIndex(
-        item => item.product.id === product.id && item.selected_variant === selected_variant
+        (item) => item.productId === product.id && item.variantId === selectedVariant.id
       );
       if (existingIdx >= 0) {
         const updated = [...prev];
         updated[existingIdx].quantity += quantity;
         return updated;
       } else {
-        return [...prev, { product, quantity, selected_variant }];
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            variantId: selectedVariant.id,
+            quantity,
+            product,
+            selectedVariant,
+          },
+        ];
       }
     });
-    setIsCartOpen(true);
+
+    showToast(`${product.nameEn} added to shopping bag!`, 'success');
   };
 
-  const removeFromCart = (productId: string, selected_variant?: string) => {
-    setCart(prev => prev.filter(item => !(item.product.id === productId && item.selected_variant === selected_variant)));
-  };
-
-  const updateCartQuantity = (productId: string, quantity: number, selected_variant?: string) => {
+  const updateCartQuantity = (productId: string, variantId: string, quantity: number) => {
     if (quantity <= 0) {
-      removeFromCart(productId, selected_variant);
+      removeFromCart(productId, variantId);
       return;
     }
-    setCart(prev => prev.map(item => {
-      if (item.product.id === productId && item.selected_variant === selected_variant) {
-        return { ...item, quantity };
-      }
-      return item;
-    }));
+    setCart((prev) =>
+      prev.map((item) =>
+        item.productId === productId && item.variantId === variantId
+          ? { ...item, quantity }
+          : item
+      )
+    );
+  };
+
+  const removeFromCart = (productId: string, variantId: string) => {
+    setCart((prev) =>
+      prev.filter((item) => !(item.productId === productId && item.variantId === variantId))
+    );
+    showToast('Item removed from shopping bag', 'info');
   };
 
   const clearCart = () => {
@@ -158,104 +239,118 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAppliedCoupon(null);
   };
 
-  const cartTotal = cart.reduce((sum, item) => {
-    const price = item.product.discount_price || item.product.price;
-    return sum + price * item.quantity;
-  }, 0);
+  // Pricing calculations
+  const cartSubtotal = cart.reduce(
+    (sum, item) => sum + (item.product.finalPrice || item.product.basePrice) * item.quantity,
+    0
+  );
 
-  const cartCount = cart.reduce((count, item) => count + item.quantity, 0);
+  const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const toggleWishlist = (product: Product) => {
-    setWishlist(prev => {
-      const exists = prev.some(p => p.id === product.id);
-      if (exists) return prev.filter(p => p.id !== product.id);
-      return [...prev, product];
-    });
-  };
+  const freeShippingThreshold = storeSettings.freeShippingThreshold || 1500;
+  const isFreeShipping = cartSubtotal >= freeShippingThreshold;
+  const amountNeededForFreeShipping = Math.max(0, freeShippingThreshold - cartSubtotal);
+  const shippingFee = cart.length === 0 ? 0 : isFreeShipping ? 0 : storeSettings.standardShippingFee || 120;
 
-  const isInWishlist = (productId: string) => {
-    return wishlist.some(p => p.id === productId);
-  };
-
+  // Coupon handling
   const applyCoupon = (code: string) => {
-    const coupon = StorageService.getCouponByCode(code);
-    if (!coupon) {
-      return { success: false, message: t('couponInvalid') };
+    const res = StorageService.validateCoupon(code, cartSubtotal);
+    if (!res.valid || !res.coupon) {
+      return { success: false, message: res.error || 'Invalid coupon code' };
     }
-    if (cartTotal < coupon.min_order_amount) {
-      return { success: false, message: `Minimum order amount of ₹${coupon.min_order_amount} required.` };
-    }
-    setAppliedCoupon(coupon);
-    return { success: true, message: t('couponApplied') };
+    setAppliedCoupon(res.coupon);
+    showToast(`Coupon ${res.coupon.code} applied successfully!`, 'success');
+    return { success: true, message: 'Coupon applied successfully' };
   };
 
   const removeCoupon = () => {
     setAppliedCoupon(null);
+    showToast('Coupon removed', 'info');
   };
 
-  const checkPincodeDelivery = (pincode: string) => {
-    const cleanPin = pincode.trim();
-    if (cleanPin.length === 6 && /^\d+$/.test(cleanPin)) {
-      const date = new Date();
-      date.setDate(date.getDate() + 3);
-      return {
-        available: true,
-        estimatedDate: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-      };
-    }
-    return { available: false, estimatedDate: '' };
-  };
-
-  let discountAmount = 0;
+  let couponDiscount = 0;
   if (appliedCoupon) {
-    if (appliedCoupon.discount_type === 'percentage') {
-      discountAmount = Math.round((cartTotal * appliedCoupon.discount_value) / 100);
-      if (appliedCoupon.max_discount_amount && discountAmount > appliedCoupon.max_discount_amount) {
-        discountAmount = appliedCoupon.max_discount_amount;
-      }
+    if (appliedCoupon.discountType === 'PERCENTAGE') {
+      const calculated = (cartSubtotal * appliedCoupon.discountValue) / 100;
+      couponDiscount = appliedCoupon.maxDiscountAmount
+        ? Math.min(calculated, appliedCoupon.maxDiscountAmount)
+        : calculated;
     } else {
-      discountAmount = appliedCoupon.discount_value;
+      couponDiscount = appliedCoupon.discountValue;
     }
   }
 
-  const shippingFee = cartTotal > 2999 || cartTotal === 0 ? 0 : 150;
-  const grandTotal = Math.max(0, cartTotal - discountAmount + shippingFee);
+  const cartGrandTotal = Math.max(0, cartSubtotal - couponDiscount + shippingFee);
+
+  // Wishlist
+  const toggleWishlist = (productId: string) => {
+    const isAdded = StorageService.toggleWishlist(productId);
+    setWishlist(StorageService.getWishlist());
+    showToast(isAdded ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+  };
+
+  const isInWishlist = (productId: string) => wishlist.includes(productId);
+
+  const t = getT(language);
 
   return (
-    <ShopContext.Provider value={{
-      language,
-      setLanguage,
-      t,
-      user,
-      loginUser,
-      registerUser,
-      logoutUser,
-      cart,
-      addToCart,
-      removeFromCart,
-      updateCartQuantity,
-      clearCart,
-      cartTotal,
-      cartCount,
-      wishlist,
-      toggleWishlist,
-      isInWishlist,
-      isCartOpen,
-      setIsCartOpen,
-      categories,
-      products,
-      orders,
-      settings,
-      coupons,
-      appliedCoupon,
-      applyCoupon,
-      removeCoupon,
-      discountAmount,
-      shippingFee,
-      grandTotal,
-      refreshData,
-      checkPincodeDelivery
-    }}>
+    <ShopContext.Provider
+      value={{
+        language,
+        setLanguage,
+        t,
+        currentUser,
+        setCurrentUser,
+        isAdmin,
+        viewMode,
+        setViewMode,
+        adminTab,
+        setAdminTab,
+        activeTab,
+        setActiveTab,
+        selectedProductSlug,
+        openProduct,
+        openPdp: openProduct,
+        selectedCategory,
+        setSelectedCategory,
+        trackingOrderId,
+        setTrackingOrderId,
+        openTracking,
+        cart,
+        addToCart,
+        updateCartQuantity,
+        removeFromCart,
+        clearCart,
+        isCartOpen,
+        setIsCartOpen,
+        cartSubtotal,
+        cartItemCount,
+        freeShippingThreshold,
+        isFreeShipping,
+        amountNeededForFreeShipping,
+        shippingFee,
+        appliedCoupon,
+        applyCoupon,
+        removeCoupon,
+        couponDiscount,
+        cartGrandTotal,
+        wishlist,
+        toggleWishlist,
+        isInWishlist,
+        searchQuery,
+        setSearchQuery,
+        toasts,
+        showToast,
+        storeSettings,
+        products,
+        refreshData,
+        isAuthModalOpen,
+        setIsAuthModalOpen,
+        authModalMode,
+        openAuthModal,
+        logout,
+      }}
+    >
       {children}
     </ShopContext.Provider>
   );
@@ -263,6 +358,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useShop = () => {
   const context = useContext(ShopContext);
-  if (!context) throw new Error('useShop must be used within a ShopProvider');
+  if (!context) {
+    throw new Error('useShop must be used within a ShopProvider');
+  }
   return context;
 };
