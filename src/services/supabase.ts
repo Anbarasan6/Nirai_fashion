@@ -1,13 +1,13 @@
 /**
  * Direct Supabase Database Integration & Real-Time Sync
- * Production Supabase URL: https://lqzrahjmgzdsbosywjju.supabase.co
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { env } from '../config/env';
 import { Product, Category, Order, User, Coupon, StoreSettings } from '../types';
 
-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+export const SUPABASE_URL = env.VITE_SUPABASE_URL;
+export const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(
   SUPABASE_URL &&
@@ -16,10 +16,10 @@ export const isSupabaseConfigured = Boolean(
   !SUPABASE_ANON_KEY.includes('your-anon-key')
 );
 
-// Initialize Supabase Client
+// Initialize Supabase Client directly with validated environment configuration
 export const supabase: SupabaseClient = createClient(
-  isSupabaseConfigured ? SUPABASE_URL : 'https://placeholder.supabase.co',
-  isSupabaseConfigured ? SUPABASE_ANON_KEY : 'placeholder-anon-key',
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
   {
     auth: {
       persistSession: false,

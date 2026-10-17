@@ -1,11 +1,12 @@
 /**
  * Cloudinary Direct Upload Service
- * Uses unsigned upload preset 'nirai_preset' with cloud 'dbuyygwtl'
  */
 
+import { env } from '../config/env';
+
 export const CLOUDINARY_CONFIG = {
-  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '',
-  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
+  cloudName: env.VITE_CLOUDINARY_CLOUD_NAME,
+  uploadPreset: env.VITE_CLOUDINARY_UPLOAD_PRESET,
 };
 
 export interface CloudinaryUploadResult {
