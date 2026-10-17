@@ -46,11 +46,15 @@ const AppLayout: React.FC = () => {
           <Route path="/account" element={<CustomerAccountPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
-          <Route path="/policies" element={<PoliciesPage />} />
-          <Route path="/privacy-policy" element={<PoliciesPage section="privacy" />} />
-          <Route path="/shipping-policy" element={<PoliciesPage section="shipping" />} />
-          <Route path="/refund-policy" element={<PoliciesPage section="refund" />} />
-          <Route path="/terms" element={<PoliciesPage section="terms" />} />
+          <Route path="/policies" element={<PoliciesPage defaultTab="about" />} />
+          <Route path="/privacy-policy" element={<PoliciesPage defaultTab="privacy" />} />
+          <Route path="/shipping-policy" element={<PoliciesPage defaultTab="shipping" />} />
+          <Route path="/refund-policy" element={<PoliciesPage defaultTab="refund" />} />
+          <Route path="/return-policy" element={<PoliciesPage defaultTab="return" />} />
+          <Route path="/cancellation-policy" element={<PoliciesPage defaultTab="cancellation" />} />
+          <Route path="/terms" element={<PoliciesPage defaultTab="terms" />} />
+          <Route path="/terms-conditions" element={<PoliciesPage defaultTab="terms" />} />
+          <Route path="/faq" element={<PoliciesPage defaultTab="faq" />} />
           <Route path="/admin" element={<AdminPages />} />
           <Route path="/admin/:tab" element={<AdminPages />} />
           <Route path="*" element={<NotFoundPage />} />
