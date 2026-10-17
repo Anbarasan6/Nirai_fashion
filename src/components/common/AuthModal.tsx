@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
 import { useShop } from '../../context/ShopContext';
-import { StorageService } from '../../services/storage';
-import { User } from '../../types';
+import { supabase } from '../../services/supabase';
 import {
   X,
   Lock,
   Mail,
   User as UserIcon,
   Phone,
-  ShieldCheck,
   CheckCircle2,
   ArrowRight,
-  Sparkles,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -25,7 +24,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   defaultMode = 'login',
 }) => {
-  const { setCurrentUser, setViewMode, showToast, refreshData } = useShop();
+  const { showToast } = useShop();
 
   const [mode, setMode] = useState<'login' | 'register'>(defaultMode);
   const [email, setEmail] = useState('');
@@ -35,104 +34,120 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const users = StorageService.getUsers();
-    const matched = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
+    setAuthError(null);
 
-    if (!matched) {
-      showToast('No account found with this email. You can sign up below.', 'error');
+    if (!email.trim() || !password.trim()) {
+      setAuthError('Please enter both email and password.');
       return;
     }
 
-    if (!matched.isActive) {
-      showToast('This account has been suspended by administration.', 'error');
-      return;
-    }
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: password.trim(),
+      });
 
-    if (!password.trim()) {
-      showToast('Please enter your account password.', 'error');
-      return;
-    }
+      if (error) {
+        setAuthError(error.message);
+        showToast(error.message, 'error');
+        return;
+      }
 
-    // Verify password if set on record
-    if (matched.password && matched.password !== password.trim()) {
-      showToast('Incorrect password. Please verify and try again.', 'error');
-      return;
+      showToast(`Welcome back! Logged in successfully.`, 'success');
+      onClose();
+    } catch (err: any) {
+      setAuthError(err?.message || 'Login failed.');
+      showToast(err?.message || 'Login failed.', 'error');
+    } finally {
+      setIsLoading(false);
     }
-
-    // If legacy record without stored password, save the password
-    if (!matched.password) {
-      matched.password = password.trim();
-      StorageService.saveUser(matched);
-    }
-
-    setCurrentUser(matched);
-    showToast(`Welcome back, ${matched.name}!`, 'success');
-    onClose();
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError(null);
+
     if (!name.trim() || !email.trim()) {
-      showToast('Please enter your name and email address', 'error');
+      setAuthError('Please enter your full name and email address.');
       return;
     }
 
     if (!password.trim() || password.trim().length < 6) {
-      showToast('Password must be at least 6 characters long', 'error');
+      setAuthError('Password must be at least 6 characters long.');
       return;
     }
 
-    const users = StorageService.getUsers();
-    const existing = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    if (existing) {
-      showToast('An account with this email already exists. Please log in.', 'error');
-      setMode('login');
-      return;
-    }
-
-    const newUser: User = {
-      id: `cust-${Date.now()}`,
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      phone: phone.trim() || undefined,
-      role: 'customer',
-      password: password.trim(),
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      addresses: [
-        {
-          id: `addr-${Date.now()}`,
-          fullName: name.trim(),
-          phone: phone.trim() || '+91 98400 00000',
-          street: '10, Temple View Avenue',
-          city: 'Chennai',
-          state: 'Tamil Nadu',
-          pincode: '600028',
-          isDefault: true,
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password: password.trim(),
+        options: {
+          data: {
+            name: name.trim(),
+            phone: phone.trim() || undefined,
+          },
         },
-      ],
-    };
+      });
 
-    StorageService.saveUser(newUser);
-    refreshData();
-    setCurrentUser(newUser);
-    showToast(`Welcome to Nirai, ${newUser.name}! Your account has been created.`, 'success');
-    onClose();
+      if (error) {
+        setAuthError(error.message);
+        showToast(error.message, 'error');
+        return;
+      }
+
+      if (data.session) {
+        showToast(`Welcome to Nirai, ${name.trim()}! Your account has been created.`, 'success');
+      } else {
+        showToast(`Account created! A confirmation email was sent to ${email.trim()}.`, 'info');
+      }
+      onClose();
+    } catch (err: any) {
+      setAuthError(err?.message || 'Account registration failed.');
+      showToast(err?.message || 'Account registration failed.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError(null);
+
     if (!forgotEmail.trim()) {
-      showToast('Please enter your registered email address', 'error');
+      setAuthError('Please enter your registered email address.');
       return;
     }
-    setForgotSent(true);
-    showToast(`Password recovery instructions dispatched to ${forgotEmail.trim()}`, 'success');
+
+    setIsLoading(true);
+    try {
+      const redirectUrl = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim().toLowerCase(), {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        showToast(error.message, 'error');
+        return;
+      }
+
+      setForgotSent(true);
+      showToast(`Password recovery link dispatched to ${forgotEmail.trim()}`, 'success');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Failed to dispatch password recovery link.');
+      showToast(err?.message || 'Failed to dispatch password recovery link.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -142,7 +157,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="bg-[#2D1619] text-amber-100 p-6 relative">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-amber-300 hover:text-white p-1 rounded-lg"
+            className="absolute top-4 right-4 text-amber-300 hover:text-white p-1 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -158,34 +173,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </h2>
           <p className="text-xs text-amber-200/80 mt-1">
             {isForgotMode
-              ? 'Enter your email address to receive password recovery instructions.'
+              ? 'Enter your registered email to receive a password recovery link.'
               : mode === 'login'
-              ? 'Access your orders, saved addresses, and bridal wishlist.'
+              ? 'Access your orders, saved addresses, and handloom wishlist.'
               : 'Join the Nirai family for authentic handloom craftsmanship.'}
           </p>
         </div>
 
         {/* Content Body */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4">
+          {authError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+              <span>{authError}</span>
+            </div>
+          )}
+
           {isForgotMode ? (
             <div className="space-y-4 text-xs">
               {forgotSent ? (
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3 text-center">
                   <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                  <p className="font-semibold text-emerald-900">
-                    Password Reset Instructions Sent
+                  <p className="font-semibold text-emerald-900 text-sm">
+                    Password Reset Link Dispatched
                   </p>
-                  <p className="text-stone-600 text-[11px]">
-                    We have dispatched password recovery instructions to{' '}
-                    <strong className="text-slate-900">{forgotEmail}</strong>. Please check your inbox.
+                  <p className="text-stone-600 text-[11px] leading-relaxed">
+                    We sent password recovery instructions to{' '}
+                    <strong className="text-slate-900">{forgotEmail}</strong>. Please check your inbox and click the link to update your credentials.
                   </p>
                   <button
                     onClick={() => {
                       setIsForgotMode(false);
                       setForgotSent(false);
                       setMode('login');
+                      setAuthError(null);
                     }}
-                    className="w-full py-2 bg-[#2D1619] text-amber-100 rounded-lg font-semibold mt-2 cursor-pointer"
+                    className="w-full py-2 bg-[#2D1619] text-amber-100 rounded-lg font-semibold mt-2 cursor-pointer hover:bg-amber-950 transition-colors"
                   >
                     Return to Sign In
                   </button>
@@ -209,16 +232,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    disabled={isLoading}
+                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                   >
-                    <span>Send Reset Instructions</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Sending Link...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Send Recovery Link</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setIsForgotMode(false)}
-                    className="w-full text-center text-[11px] text-stone-500 hover:text-stone-800 transition-colors cursor-pointer"
+                    onClick={() => {
+                      setIsForgotMode(false);
+                      setAuthError(null);
+                    }}
+                    className="w-full text-center text-[11px] text-stone-500 hover:text-stone-800 transition-colors cursor-pointer pt-1"
                   >
                     Cancel and return to Sign In
                   </button>
@@ -230,7 +266,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Tabs */}
               <div className="flex border-b border-stone-200">
                 <button
-                  onClick={() => setMode('login')}
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setAuthError(null);
+                  }}
                   className={`flex-1 pb-2.5 text-xs font-semibold text-center border-b-2 transition-colors cursor-pointer ${
                     mode === 'login'
                       ? 'border-amber-900 text-amber-950'
@@ -240,7 +280,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Sign In
                 </button>
                 <button
-                  onClick={() => setMode('register')}
+                  type="button"
+                  onClick={() => {
+                    setMode('register');
+                    setAuthError(null);
+                  }}
                   className={`flex-1 pb-2.5 text-xs font-semibold text-center border-b-2 transition-colors cursor-pointer ${
                     mode === 'register'
                       ? 'border-amber-900 text-amber-950'
@@ -277,6 +321,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         onClick={() => {
                           setForgotEmail(email);
                           setIsForgotMode(true);
+                          setAuthError(null);
                         }}
                         className="text-[10px] text-amber-800 hover:underline cursor-pointer bg-transparent border-0 p-0"
                       >
@@ -298,10 +343,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+                    disabled={isLoading}
+                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2 disabled:opacity-50"
                   >
-                    <span>Sign In to Account</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Authenticating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Sign In with Password</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
                 </form>
               ) : (
@@ -368,10 +423,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+                    disabled={isLoading}
+                    className="w-full py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-2 disabled:opacity-50"
                   >
-                    <span>Register & Continue</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Creating Account...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Register with Supabase</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
                 </form>
               )}
@@ -379,7 +444,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           <div className="pt-2 text-center text-[11px] text-stone-400">
-            Protected by Nirai Handlooms SSL Encryption & Data Safeguards
+            Powered by Supabase Auth & Industry Standard Encryption
           </div>
         </div>
       </div>

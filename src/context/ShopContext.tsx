@@ -10,6 +10,7 @@ import {
   StoreSettings,
 } from '../types';
 import { StorageService, subscribeToStore } from '../services/storage';
+import { supabase } from '../services/supabase';
 import { getT } from '../data/translations';
 
 export interface ToastItem {
@@ -24,6 +25,7 @@ interface ShopContextType {
   t: ReturnType<typeof getT>;
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  isAuthLoading: boolean;
   isAdmin: boolean;
   viewMode: 'storefront' | 'admin';
   setViewMode: (mode: 'storefront' | 'admin') => void;
@@ -91,10 +93,113 @@ const ShopContext = createContext<ShopContextType | undefined>(undefined);
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const [language, setLanguage] = useState<Language>('en');
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const users = StorageService.getUsers();
-    return users.find((u) => u.role === 'customer') || null;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // Sync with Supabase Auth session & onAuthStateChange
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadUserProfile(authUser: { id: string; email?: string; user_metadata?: any }) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
+        const { data: addressRows } = await supabase
+          .from('addresses')
+          .select('*')
+          .eq('user_id', authUser.id);
+
+        const addresses = (addressRows || []).map((a: any) => ({
+          id: a.id,
+          fullName: a.full_name,
+          phone: a.phone,
+          street: a.street_address,
+          landmark: a.landmark || undefined,
+          city: a.city,
+          state: a.state,
+          pincode: a.postal_code,
+          isDefault: a.is_default,
+        }));
+
+        if (isMounted) {
+          if (profile) {
+            setCurrentUser({
+              id: profile.id,
+              name: profile.name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
+              email: authUser.email || '',
+              phone: profile.phone || authUser.user_metadata?.phone,
+              role: profile.role || 'customer',
+              addresses,
+              isActive: profile.is_active !== false,
+              createdAt: profile.created_at,
+            });
+          } else {
+            setCurrentUser({
+              id: authUser.id,
+              name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
+              email: authUser.email || '',
+              phone: authUser.user_metadata?.phone,
+              role: 'customer',
+              addresses: [],
+              isActive: true,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching user profile:', err);
+        if (isMounted) {
+          setCurrentUser({
+            id: authUser.id,
+            name: authUser.email?.split('@')[0] || 'Customer',
+            email: authUser.email || '',
+            role: 'customer',
+            addresses: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsAuthLoading(false);
+        }
+      }
+    }
+
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user);
+      } else {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsAuthLoading(false);
+        }
+      }
+    });
+
+    // Listen to ongoing auth changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await loadUserProfile(session.user);
+      } else {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsAuthLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const [viewMode, setViewMode] = useState<'storefront' | 'admin'>('storefront');
   const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers'>('dashboard');
   const [activeTab, _setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
@@ -136,7 +241,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthModalOpen(true);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Signout error:', e);
+    }
     setCurrentUser(null);
     showToast('Signed out of account', 'info');
   };
@@ -334,6 +444,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         t,
         currentUser,
         setCurrentUser,
+        isAuthLoading,
         isAdmin,
         viewMode,
         setViewMode,

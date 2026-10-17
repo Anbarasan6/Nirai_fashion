@@ -22,8 +22,9 @@ export const supabase: SupabaseClient = createClient(
   SUPABASE_ANON_KEY,
   {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
     },
   }
 );
@@ -297,65 +298,104 @@ export async function saveOrderToSupabase(order: Order): Promise<boolean> {
 }
 
 /**
- * USERS & CUSTOMERS SYNC
- * Dual-table support with automatic fallback between 'users' and 'customers'
+ * USERS & PROFILES SYNC
+ * Primary integration with Supabase Auth linked public.profiles
  */
 export async function fetchUsersFromSupabase(): Promise<User[] | null> {
   try {
-    // Try users table first
-    let res = await supabase.from('users').select('*');
-    if (res.error || !res.data) {
-      // Fallback to customers table
-      res = await supabase.from('customers').select('*');
+    // Query profiles table
+    const { data, error } = await supabase.from('profiles').select('*');
+    if (error || !data) {
+      // Fallback to legacy users table if profiles not yet populated
+      const res = await supabase.from('users').select('*');
+      if (res.error || !res.data) return null;
+      return res.data.map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        role: row.role || 'customer',
+        addresses: Array.isArray(row.addresses) ? row.addresses : [],
+        isActive: row.is_active !== false,
+        createdAt: row.created_at || new Date().toISOString(),
+      }));
     }
-    if (res.error || !res.data) return null;
 
-    return res.data.map((row: any) => ({
+    return data.map((row: any) => ({
       id: row.id,
-      name: row.name,
-      email: row.email,
+      name: row.name || 'User',
+      email: '', // Email is protected in auth.users
       phone: row.phone,
       role: row.role || 'customer',
-      password: row.password,
-      addresses: Array.isArray(row.addresses) ? row.addresses : [],
+      addresses: [],
       isActive: row.is_active !== false,
       createdAt: row.created_at || new Date().toISOString(),
     }));
   } catch (e) {
-    console.warn('Error fetching users from Supabase:', e);
+    console.warn('Error fetching users/profiles from Supabase:', e);
+    return null;
+  }
+}
+
+export async function fetchProfileFromSupabase(userId: string): Promise<User | null> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) return null;
+
+    // Fetch associated normalized addresses
+    const { data: addressRows } = await supabase
+      .from('addresses')
+      .select('*')
+      .eq('user_id', userId);
+
+    const addresses = (addressRows || []).map((a: any) => ({
+      id: a.id,
+      fullName: a.full_name,
+      phone: a.phone,
+      street: a.street_address,
+      landmark: a.landmark || undefined,
+      city: a.city,
+      state: a.state,
+      pincode: a.postal_code,
+      isDefault: a.is_default,
+    }));
+
+    return {
+      id: data.id,
+      name: data.name || 'Customer',
+      email: '',
+      phone: data.phone || undefined,
+      role: data.role || 'customer',
+      addresses,
+      isActive: data.is_active !== false,
+      createdAt: data.created_at,
+    };
+  } catch (err) {
+    console.warn('Error loading profile from Supabase:', err);
     return null;
   }
 }
 
 export async function saveUserToSupabase(user: User): Promise<boolean> {
   try {
-    const row = {
+    const profileRow = {
       id: user.id,
       name: user.name,
-      email: user.email.toLowerCase().trim(),
       phone: user.phone || null,
       role: user.role || 'customer',
-      password: user.password || null,
-      addresses: user.addresses || [],
       is_active: user.isActive,
       updated_at: new Date().toISOString(),
     };
 
-    // Upsert into users
-    const res1 = await supabase.from('users').upsert(row, { onConflict: 'id' });
-
-    // Also mirror to customers table if role is customer for schema resilience
-    if (user.role === 'customer') {
-      try {
-        await supabase.from('customers').upsert(row, { onConflict: 'id' });
-      } catch {
-        // optional table
-      }
-    }
-
-    return !res1.error;
+    const res = await supabase.from('profiles').upsert(profileRow, { onConflict: 'id' });
+    return !res.error;
   } catch (err) {
-    console.warn('Failed to save user to Supabase:', err);
+    console.warn('Failed to save user profile to Supabase:', err);
     return false;
   }
 }
@@ -446,7 +486,7 @@ export async function fetchSettingsFromSupabase(): Promise<StoreSettings | null>
       isAnnouncementActive: data.is_announcement_active !== false,
       bankDetails: data.bank_details || {
         bankName: 'HDFC Bank',
-        accountName: 'NIRAI HANDLOOMS PRIVATE LIMITED',
+        accountName: 'NIRAI HANDLOOMS',
         accountNumber: '50200088992211',
         ifscCode: 'HDFC0001244',
         branch: 'Cathedral Road, Chennai',
