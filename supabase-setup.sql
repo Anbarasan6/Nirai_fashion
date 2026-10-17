@@ -140,27 +140,132 @@ CREATE TABLE IF NOT EXISTS public.settings (
   announcement_en TEXT,
   announcement_ta TEXT,
   is_announcement_active BOOLEAN DEFAULT true,
-  bank_details JSONB DEFAULT '{"bankName": "HDFC Bank", "accountName": "NIRAI HANDLOOMS PRIVATE LIMITED", "accountNumber": "50200088992211", "ifscCode": "HDFC0001244", "branch": "Cathedral Road, Chennai"}'::jsonb,
+  bank_details JSONB DEFAULT '{"bankName": "HDFC Bank", "accountName": "NIRAI HANDLOOMS", "accountNumber": "50200088992211", "ifscCode": "HDFC0001244", "branch": "Cathedral Road, Chennai"}'::jsonb,
   upi_details JSONB DEFAULT '{"upiId": "niraihandlooms@hdfcbank", "merchantName": "Nirai Handlooms", "qrCodeNote": "Scan & Pay with GPay, PhonePe or Paytm"}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. PERMISSIONS & ROW LEVEL SECURITY
--- Disable RLS to allow direct anon client operations
-ALTER TABLE public.products DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.categories DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.coupons DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.settings DISABLE ROW LEVEL SECURITY;
+-- 8. SUPPLIERS TABLE (Admin Sourcing)
+CREATE TABLE IF NOT EXISTS public.suppliers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  contact_person TEXT,
+  phone TEXT,
+  email TEXT,
+  city TEXT,
+  state TEXT,
+  lead_time_days INTEGER DEFAULT 7,
+  is_active BOOLEAN DEFAULT true,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Grant broad privileges to anon & authenticated roles for client sync
-GRANT ALL ON TABLE public.products TO anon, authenticated;
-GRANT ALL ON TABLE public.categories TO anon, authenticated;
-GRANT ALL ON TABLE public.orders TO anon, authenticated;
-GRANT ALL ON TABLE public.users TO anon, authenticated;
-GRANT ALL ON TABLE public.customers TO anon, authenticated;
-GRANT ALL ON TABLE public.coupons TO anon, authenticated;
-GRANT ALL ON TABLE public.settings TO anon, authenticated;
+-- 9. COURIER PARTNERS TABLE
+CREATE TABLE IF NOT EXISTS public.courier_partners (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  phone TEXT,
+  email TEXT,
+  delivery_days TEXT,
+  coverage TEXT,
+  tracking_url_template TEXT,
+  badge_text TEXT,
+  is_active BOOLEAN DEFAULT true,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. STOCK MOVEMENTS AUDIT LOG
+CREATE TABLE IF NOT EXISTS public.stock_movements (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  sku TEXT NOT NULL,
+  type TEXT NOT NULL, -- RECEIPT, SALE, ADJUSTMENT, DAMAGE, RETURN
+  quantity_delta INTEGER NOT NULL,
+  previous_stock INTEGER NOT NULL,
+  new_stock INTEGER NOT NULL,
+  reason TEXT,
+  performed_by TEXT,
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. PERFORMANCE INDEXES
+CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_active ON public.products(is_active);
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON public.orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON public.orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON public.orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_movements_prod ON public.stock_movements(product_id);
+
+-- 12. PERMISSIONS & ROW LEVEL SECURITY (RLS)
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.courier_partners ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+
+-- Products: Public can browse active products; Authenticated staff/admins can manage
+CREATE POLICY "Public can view active products" ON public.products
+  FOR SELECT USING (is_active = true OR auth.role() = 'authenticated');
+
+CREATE POLICY "Admins can manage products" ON public.products
+  FOR ALL USING (auth.role() = 'authenticated');
+
+-- Categories: Public can view active categories
+CREATE POLICY "Public can view active categories" ON public.categories
+  FOR SELECT USING (is_active = true OR auth.role() = 'authenticated');
+
+CREATE POLICY "Admins can manage categories" ON public.categories
+  FOR ALL USING (auth.role() = 'authenticated');
+
+-- Settings: Public can view settings; Admins can update
+CREATE POLICY "Public can view store settings" ON public.settings
+  FOR SELECT USING (true);
+
+CREATE POLICY "Admins can update store settings" ON public.settings
+  FOR ALL USING (auth.role() = 'authenticated');
+
+-- Coupons: Public can view active coupons; Admins can manage
+CREATE POLICY "Public can view active coupons" ON public.coupons
+  FOR SELECT USING (is_active = true OR auth.role() = 'authenticated');
+
+CREATE POLICY "Admins can manage coupons" ON public.coupons
+  FOR ALL USING (auth.role() = 'authenticated');
+
+-- Orders: Anyone can insert (checkout); Customers view own; Admins view all
+CREATE POLICY "Anyone can create order" ON public.orders
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Users view own orders or admin all" ON public.orders
+  FOR SELECT USING (
+    auth.role() = 'authenticated' OR
+    (customer_id IS NOT NULL AND customer_id = auth.uid()::text)
+  );
+
+CREATE POLICY "Admins can update orders" ON public.orders
+  FOR UPDATE USING (auth.role() = 'authenticated');
+
+-- Users & Customers: Self access or admin
+CREATE POLICY "Users can manage own record" ON public.users
+  FOR ALL USING (id = auth.uid()::text OR auth.role() = 'authenticated');
+
+CREATE POLICY "Customers can manage own record" ON public.customers
+  FOR ALL USING (id = auth.uid()::text OR auth.role() = 'authenticated');
+
+-- Internal: Suppliers, Couriers & Stock Movements for authenticated personnel
+CREATE POLICY "Admins can manage suppliers" ON public.suppliers
+  FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Admins can manage couriers" ON public.courier_partners
+  FOR ALL USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Admins can view stock audit" ON public.stock_movements
+  FOR ALL USING (auth.role() = 'authenticated');

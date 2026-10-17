@@ -6,20 +6,27 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Product, Category, Order, User, Coupon, StoreSettings } from '../types';
 
-export const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || 'https://lqzrahjmgzdsbosywjju.supabase.co';
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxenJhaGptZ3pkc2Jvc3l3amp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NDI2MTMsImV4cCI6MjEwNjAxODYxM30.VeG2TYiT2tcvn6ZfUKO_7zlluZTU54qgmVy3W0Wg_Lo';
+export const isSupabaseConfigured = Boolean(
+  SUPABASE_URL &&
+  SUPABASE_ANON_KEY &&
+  !SUPABASE_URL.includes('your-project') &&
+  !SUPABASE_ANON_KEY.includes('your-anon-key')
+);
 
 // Initialize Supabase Client
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+export const supabase: SupabaseClient = createClient(
+  isSupabaseConfigured ? SUPABASE_URL : 'https://placeholder.supabase.co',
+  isSupabaseConfigured ? SUPABASE_ANON_KEY : 'placeholder-anon-key',
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
+);
 
 let isConnectedCache: boolean | null = null;
 
@@ -27,6 +34,10 @@ let isConnectedCache: boolean | null = null;
  * Health-check Supabase connectivity
  */
 export async function checkSupabaseConnection(): Promise<boolean> {
+  if (!isSupabaseConfigured) {
+    isConnectedCache = false;
+    return false;
+  }
   try {
     const { error } = await supabase.from('products').select('id').limit(1);
     if (error && error.code !== 'PGRST116' && !error.message.includes('0 rows')) {

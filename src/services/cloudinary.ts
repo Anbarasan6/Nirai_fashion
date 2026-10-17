@@ -4,8 +4,8 @@
  */
 
 export const CLOUDINARY_CONFIG = {
-  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'dbuyygwtl',
-  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'nirai_preset',
+  cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || '',
+  uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || '',
 };
 
 export interface CloudinaryUploadResult {
@@ -20,9 +20,9 @@ export interface CloudinaryUploadResult {
 }
 
 /**
- * Upload an image file or base64 data to Cloudinary
+ * Upload an image file or blob to Cloudinary.
  * If Cloudinary preset is not configured or network error occurs,
- * gracefully falls back to optimized Base64 / Local Object URL with zero crash.
+ * gracefully falls back to local data URL without crashing.
  */
 export async function uploadToCloudinary(
   file: File | Blob,
@@ -30,6 +30,26 @@ export async function uploadToCloudinary(
   onProgress?: (percent: number) => void
 ): Promise<CloudinaryUploadResult> {
   const { cloudName, uploadPreset } = CLOUDINARY_CONFIG;
+
+  if (!cloudName || !uploadPreset) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        resolve({
+          url: dataUrl,
+          secureUrl: dataUrl,
+          publicId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          width: 800,
+          height: 1000,
+          format: file.type.split('/')[1] || 'webp',
+          bytes: file.size,
+          originalFilename: (file as File).name || 'upload.webp',
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   try {
     const formData = new FormData();
