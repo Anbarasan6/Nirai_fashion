@@ -23,6 +23,7 @@ import { ContactPage } from './pages/ContactPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AdminPages } from './pages/admin/AdminPages';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 import { WhatsAppButton } from './components/common/WhatsAppButton';
 
@@ -76,10 +77,12 @@ const AppLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <ShopProvider>
-        <AppLayout />
-      </ShopProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ShopProvider>
+          <AppLayout />
+        </ShopProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
