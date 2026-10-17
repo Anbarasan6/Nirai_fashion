@@ -45,8 +45,7 @@ export const OrderTrackingPage: React.FC = () => {
     return (
       o.orderNumber.toUpperCase() === q ||
       o.id.toUpperCase() === q ||
-      (o.utrNumber && o.utrNumber.toUpperCase() === q) ||
-      (o.customerPhone && o.customerPhone.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
+      (o.utrNumber && o.utrNumber.toUpperCase() === q)
     );
   });
 

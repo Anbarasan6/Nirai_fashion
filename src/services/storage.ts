@@ -278,8 +278,27 @@ export const StorageService = {
   createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'>): Order {
     const orders = this.getOrders();
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const catalogProducts = this.getProducts();
+
+    // Verify catalog prices for each ordered line item to prevent client-side price tampering
+    const validatedItems = orderData.items.map((item) => {
+      const product = catalogProducts.find((p) => p.id === item.productId);
+      const verifiedUnitPrice = product ? (product.finalPrice || product.basePrice) : item.unitPrice;
+      return {
+        ...item,
+        unitPrice: verifiedUnitPrice,
+        totalPrice: verifiedUnitPrice * item.quantity,
+      };
+    });
+
+    const validatedSubtotal = validatedItems.reduce((acc, it) => acc + it.totalPrice, 0);
+    const calculatedGrandTotal = Math.max(0, validatedSubtotal + (orderData.shippingFee || 0) - (orderData.discountAmount || 0));
+
     const newOrder: Order = {
       ...orderData,
+      items: validatedItems,
+      subtotal: validatedSubtotal,
+      grandTotal: calculatedGrandTotal,
       id: `ord-${Date.now()}`,
       orderNumber: `NIRAI-2026-${randomSuffix}`,
       createdAt: new Date().toISOString(),
