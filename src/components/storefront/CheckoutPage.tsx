@@ -117,63 +117,68 @@ export const CheckoutPage: React.FC = () => {
 
     setIsProcessing(true);
 
-    setTimeout(() => {
-      const shippingAddress: Address = {
-        id: `addr-${Date.now()}`,
-        fullName,
-        phone,
-        street,
-        landmark,
-        city,
-        state,
-        pincode,
-        isDefault: true,
-      };
+    setTimeout(async () => {
+      try {
+        const shippingAddress: Address = {
+          id: `addr-${Date.now()}`,
+          fullName,
+          phone,
+          street,
+          landmark,
+          city,
+          state,
+          pincode,
+          isDefault: true,
+        };
 
-      const orderItems = cart.map((item) => ({
-        productId: item.productId,
-        productName: item.product.nameEn,
-        productImage: item.product.images[0] || '',
-        variantId: item.variantId,
-        variantName: item.selectedVariant.name,
-        size: item.selectedVariant.size,
-        color: item.selectedVariant.color,
-        sku: item.selectedVariant.sku || item.product.sku,
-        unitPrice: item.product.finalPrice || item.product.basePrice,
-        quantity: item.quantity,
-        totalPrice: (item.product.finalPrice || item.product.basePrice) * item.quantity,
-      }));
+        const orderItems = cart.map((item) => ({
+          productId: item.productId,
+          productName: item.product.nameEn,
+          productImage: item.product.images[0] || '',
+          variantId: item.variantId,
+          variantName: item.selectedVariant.name,
+          size: item.selectedVariant.size,
+          color: item.selectedVariant.color,
+          sku: item.selectedVariant.sku || item.product.sku,
+          unitPrice: item.product.finalPrice || item.product.basePrice,
+          quantity: item.quantity,
+          totalPrice: (item.product.finalPrice || item.product.basePrice) * item.quantity,
+        }));
 
-      const newOrder = StorageService.createOrder({
-        customerId: currentUser?.id || `guest-${Date.now()}`,
-        customerName: fullName,
-        customerEmail: email,
-        customerPhone: phone,
-        shippingAddress,
-        items: orderItems,
-        subtotal: cartSubtotal,
-        discountAmount: couponDiscount,
-        couponCode: appliedCoupon?.code,
-        shippingFee: finalShippingFee,
-        freeShippingApplied: finalShippingFee === 0,
-        grandTotal: finalPayable,
-        status: 'Pending',
-        paymentStatus: paymentMethod === 'ONLINE_UPI' ? 'PENDING_VERIFICATION' : 'Paid',
-        paymentMethod,
-        utrNumber: utrNumber.trim() || undefined,
-        shippingDetails: {
-          courierName: '',
-          trackingId: '',
-          trackingUrl: '',
-          estimatedDelivery: deliveryType === 'express' ? 'Within 48 hours' : 'Within 3-5 days',
-        },
-      });
+        const newOrder = await StorageService.createOrder({
+          customerId: currentUser?.id || `guest-${Date.now()}`,
+          customerName: fullName,
+          customerEmail: email,
+          customerPhone: phone,
+          shippingAddress,
+          items: orderItems,
+          subtotal: cartSubtotal,
+          discountAmount: couponDiscount,
+          couponCode: appliedCoupon?.code,
+          shippingFee: finalShippingFee,
+          freeShippingApplied: finalShippingFee === 0,
+          grandTotal: finalPayable,
+          status: 'Pending',
+          paymentStatus: paymentMethod === 'ONLINE_UPI' ? 'PENDING_VERIFICATION' : 'Paid',
+          paymentMethod,
+          utrNumber: utrNumber.trim() || undefined,
+          shippingDetails: {
+            courierName: '',
+            trackingId: '',
+            trackingUrl: '',
+            estimatedDelivery: deliveryType === 'express' ? 'Within 48 hours' : 'Within 3-5 days',
+          },
+        });
 
-      setIsProcessing(false);
-      setOrderCompleteOrder(newOrder);
-      clearCart();
-      showToast(`Order #${newOrder.orderNumber} placed! Payment verification in progress.`, 'success');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsProcessing(false);
+        setOrderCompleteOrder(newOrder);
+        clearCart();
+        showToast(`Order #${newOrder.orderNumber} placed! Payment verification in progress.`, 'success');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (err: any) {
+        setIsProcessing(false);
+        showToast(err.message || 'Failed to place order. Please try again.', 'error');
+      }
     }, 1200);
   };
 

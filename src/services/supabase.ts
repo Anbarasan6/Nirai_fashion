@@ -1,10 +1,26 @@
 /**
  * Direct Supabase Database Integration & Real-Time Sync
+ * Sole source of truth for products, categories, orders, coupons, settings,
+ * suppliers, couriers, stock movements, media, reviews, and wishlists.
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
-import { Product, Category, Order, User, Coupon, StoreSettings } from '../types';
+import {
+  Product,
+  Category,
+  Order,
+  User,
+  Coupon,
+  StoreSettings,
+  Supplier,
+  CourierPartner,
+  MediaItem,
+  StockMovement,
+  ProductReview,
+  PaginatedResult,
+  OrderStatus,
+} from '../types';
 
 export const SUPABASE_URL = env.VITE_SUPABASE_URL;
 export const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY;
@@ -16,7 +32,7 @@ export const isSupabaseConfigured = Boolean(
   !SUPABASE_ANON_KEY.includes('your-anon-key')
 );
 
-// Initialize Supabase Client directly with validated environment configuration
+// Initialize Supabase Client with persistent authentication
 export const supabase: SupabaseClient = createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
@@ -42,63 +58,170 @@ export async function checkSupabaseConnection(): Promise<boolean> {
   try {
     const { error } = await supabase.from('products').select('id').limit(1);
     if (error && error.code !== 'PGRST116' && !error.message.includes('0 rows')) {
-      // Table might not exist yet or permission denied
       console.warn('Supabase products check note:', error.message);
     }
     isConnectedCache = true;
     return true;
   } catch (err) {
-    console.warn('Supabase offline or unreachable, falling back to local store:', err);
+    console.warn('Supabase offline or unreachable:', err);
     isConnectedCache = false;
     return false;
   }
 }
 
-/**
- * PRODUCTS SYNC
- */
-export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
-  try {
-    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-    if (error || !data) return null;
+// ==============================================================================
+// 1. PRODUCTS & CATALOG (Server-side Pagination & Filtering)
+// ==============================================================================
 
-    return data.map((row: any) => ({
-      id: row.id,
-      sku: row.sku,
-      nameEn: row.name_en,
-      nameTa: row.name_ta || '',
-      slug: row.slug,
-      descriptionEn: row.description_en || '',
-      descriptionTa: row.description_ta || '',
-      shortDescEn: row.short_desc_en || '',
-      shortDescTa: row.short_desc_ta || '',
-      categoryId: row.category_id,
-      subCategoryId: row.sub_category_id,
-      brand: row.brand || 'Nirai',
-      fabric: row.fabric || '',
-      material: row.material || '',
-      style: row.style || '',
-      careInstructionsEn: row.care_instructions_en || '',
-      careInstructionsTa: row.care_instructions_ta || '',
-      basePrice: Number(row.base_price) || 0,
-      regularDiscount: Number(row.regular_discount) || 0,
-      specialDiscount: Number(row.special_discount) || 0,
-      finalPrice: Number(row.final_price) || 0,
-      stock: Number(row.stock) || 0,
-      lowStockThreshold: Number(row.low_stock_threshold) || 5,
-      isFeatured: Boolean(row.is_featured),
-      isNewArrival: Boolean(row.is_new_arrival),
-      isActive: row.is_active !== false,
-      images: Array.isArray(row.images) ? row.images : [],
-      variants: Array.isArray(row.variants) ? row.variants : [],
-      rating: Number(row.rating) || 5.0,
-      reviewCount: Number(row.review_count) || 0,
-      reviews: Array.isArray(row.reviews) ? row.reviews : [],
-      createdAt: row.created_at || new Date().toISOString(),
-      updatedAt: row.updated_at || new Date().toISOString(),
-    }));
-  } catch (e) {
-    console.warn('Error fetching products from Supabase:', e);
+export interface FetchProductsOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  categoryId?: string;
+  isFeatured?: boolean;
+  isNewArrival?: boolean;
+  includeInactive?: boolean;
+  sortBy?: 'price-asc' | 'price-desc' | 'rating' | 'newest';
+}
+
+function mapProductRow(row: any): Product {
+  return {
+    id: row.id,
+    sku: row.sku,
+    nameEn: row.name_en,
+    nameTa: row.name_ta || '',
+    slug: row.slug,
+    descriptionEn: row.description_en || '',
+    descriptionTa: row.description_ta || '',
+    shortDescEn: row.short_desc_en || '',
+    shortDescTa: row.short_desc_ta || '',
+    categoryId: row.category_id,
+    subCategoryId: row.sub_category_id,
+    brand: row.brand || 'Nirai',
+    fabric: row.fabric || '',
+    material: row.material || '',
+    style: row.style || '',
+    careInstructionsEn: row.care_instructions_en || '',
+    careInstructionsTa: row.care_instructions_ta || '',
+    basePrice: Number(row.base_price) || 0,
+    regularDiscount: Number(row.regular_discount) || 0,
+    specialDiscount: Number(row.special_discount) || 0,
+    finalPrice: Number(row.final_price) || 0,
+    stock: Number(row.stock) || 0,
+    lowStockThreshold: Number(row.low_stock_threshold) || 5,
+    isFeatured: Boolean(row.is_featured),
+    isNewArrival: Boolean(row.is_new_arrival),
+    isActive: row.is_active !== false,
+    images: Array.isArray(row.images) ? row.images : [],
+    variants: Array.isArray(row.variants) ? row.variants : [],
+    rating: Number(row.rating) || 5.0,
+    reviewCount: Number(row.review_count) || 0,
+    reviews: [],
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString(),
+  };
+}
+
+export async function fetchProductsPaginated(
+  options: FetchProductsOptions = {}
+): Promise<PaginatedResult<Product>> {
+  const {
+    page = 1,
+    pageSize = 12,
+    search,
+    categoryId,
+    isFeatured,
+    isNewArrival,
+    includeInactive = false,
+    sortBy = 'newest',
+  } = options;
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  try {
+    let query = supabase
+      .from('products')
+      .select('*', { count: 'exact' });
+
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+
+    if (categoryId && categoryId !== 'all') {
+      query = query.or(`category_id.eq.${categoryId},sub_category_id.eq.${categoryId}`);
+    }
+
+    if (isFeatured !== undefined) {
+      query = query.eq('is_featured', isFeatured);
+    }
+
+    if (isNewArrival !== undefined) {
+      query = query.eq('is_new_arrival', isNewArrival);
+    }
+
+    if (search && search.trim() !== '') {
+      const term = search.trim();
+      query = query.or(`name_en.ilike.%${term}%,name_ta.ilike.%${term}%,description_en.ilike.%${term}%,sku.ilike.%${term}%`);
+    }
+
+    // Sort order
+    switch (sortBy) {
+      case 'price-asc':
+        query = query.order('final_price', { ascending: true });
+        break;
+      case 'price-desc':
+        query = query.order('final_price', { ascending: false });
+        break;
+      case 'rating':
+        query = query.order('rating', { ascending: false });
+        break;
+      case 'newest':
+      default:
+        query = query.order('created_at', { ascending: false });
+        break;
+    }
+
+    query = query.range(from, to);
+
+    const { data, count, error } = await query;
+    if (error) {
+      console.error('Error querying products:', error.message);
+      return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: error.message };
+    }
+
+    const totalCount = count || 0;
+    const products = (data || []).map(mapProductRow);
+
+    return {
+      data: products,
+      totalCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalCount / pageSize),
+    };
+  } catch (err: any) {
+    console.error('Unexpected error fetching products:', err);
+    return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: err.message };
+  }
+}
+
+export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
+  const result = await fetchProductsPaginated({ page: 1, pageSize: 100, includeInactive: true });
+  return result.error ? null : result.data;
+}
+
+export async function fetchProductBySlug(slug: string): Promise<Product | null> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('slug', slug)
+      .single();
+
+    if (error || !data) return null;
+    return mapProductRow(data);
+  } catch {
     return null;
   }
 }
@@ -109,64 +232,63 @@ export async function saveProductToSupabase(product: Product): Promise<boolean> 
       id: product.id,
       sku: product.sku,
       name_en: product.nameEn,
-      name_ta: product.nameTa,
+      name_ta: product.nameTa || null,
       slug: product.slug,
       description_en: product.descriptionEn,
-      description_ta: product.descriptionTa,
-      short_desc_en: product.shortDescEn,
-      short_desc_ta: product.shortDescTa,
+      description_ta: product.descriptionTa || null,
+      short_desc_en: product.shortDescEn || null,
+      short_desc_ta: product.shortDescTa || null,
       category_id: product.categoryId,
       sub_category_id: product.subCategoryId || null,
-      brand: product.brand,
-      fabric: product.fabric,
-      material: product.material,
-      style: product.style,
-      care_instructions_en: product.careInstructionsEn,
-      care_instructions_ta: product.careInstructionsTa,
+      brand: product.brand || 'Nirai',
+      fabric: product.fabric || null,
+      material: product.material || null,
+      style: product.style || null,
+      care_instructions_en: product.careInstructionsEn || null,
+      care_instructions_ta: product.careInstructionsTa || null,
       base_price: product.basePrice,
-      regular_discount: product.regularDiscount,
-      special_discount: product.specialDiscount,
+      regular_discount: product.regularDiscount || 0,
+      special_discount: product.specialDiscount || 0,
       final_price: product.finalPrice,
       stock: product.stock,
-      low_stock_threshold: product.lowStockThreshold,
-      is_featured: product.isFeatured,
-      is_new_arrival: product.isNewArrival,
-      is_active: product.isActive,
+      low_stock_threshold: product.lowStockThreshold || 5,
+      is_featured: product.isFeatured || false,
+      is_new_arrival: product.isNewArrival || false,
+      is_active: product.isActive !== false,
       images: product.images,
       variants: product.variants,
-      rating: product.rating,
-      review_count: product.reviewCount,
-      reviews: product.reviews,
+      rating: product.rating || 5.0,
+      review_count: product.reviewCount || 0,
       updated_at: new Date().toISOString(),
     };
 
     const { error } = await supabase.from('products').upsert(row, { onConflict: 'id' });
-    if (error) {
-      console.warn('Supabase product upsert error:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Failed to save product to Supabase:', err);
-    return false;
-  }
-}
-
-export async function deleteProductFromSupabase(id: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('products').delete().eq('id', id);
     return !error;
   } catch {
     return false;
   }
 }
 
-/**
- * CATEGORIES SYNC
- */
-export async function fetchCategoriesFromSupabase(): Promise<Category[] | null> {
+export async function deleteProductFromSupabase(productId: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase.from('categories').select('*').order('display_order', { ascending: true });
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================================================================
+// 2. CATEGORIES
+// ==============================================================================
+
+export async function fetchCategoriesFromSupabase(includeInactive = false): Promise<Category[] | null> {
+  try {
+    let query = supabase.from('categories').select('*').order('display_order', { ascending: true });
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+    const { data, error } = await query;
     if (error || !data) return null;
 
     return data.map((row: any) => ({
@@ -180,11 +302,9 @@ export async function fetchCategoriesFromSupabase(): Promise<Category[] | null> 
       descriptionEn: row.description_en || '',
       descriptionTa: row.description_ta || '',
       isActive: row.is_active !== false,
-      itemCount: Number(row.item_count) || 0,
-      order: Number(row.display_order) || 0,
+      itemCount: row.item_count || 0,
     }));
-  } catch (e) {
-    console.warn('Error fetching categories from Supabase:', e);
+  } catch {
     return null;
   }
 }
@@ -197,13 +317,12 @@ export async function saveCategoryToSupabase(category: Category): Promise<boolea
       name_en: category.nameEn,
       name_ta: category.nameTa,
       level: category.level,
-      parent_id: category.parentId || null,
+      parent_id: category.parentId,
       image: category.image,
       description_en: category.descriptionEn,
       description_ta: category.descriptionTa,
       is_active: category.isActive,
       item_count: category.itemCount || 0,
-      display_order: category.order || 0,
     };
     const { error } = await supabase.from('categories').upsert(row, { onConflict: 'id' });
     return !error;
@@ -212,24 +331,62 @@ export async function saveCategoryToSupabase(category: Category): Promise<boolea
   }
 }
 
-export async function deleteCategoryFromSupabase(id: string): Promise<boolean> {
+export async function deleteCategoryFromSupabase(categoryId: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('categories').delete().eq('id', id);
+    const { error } = await supabase.from('categories').delete().eq('id', categoryId);
     return !error;
   } catch {
     return false;
   }
 }
 
-/**
- * ORDERS SYNC
- */
-export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
-  try {
-    const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
-    if (error || !data) return null;
+// ==============================================================================
+// 3. ORDERS (Paginated, Verified, and Status Tracked)
+// ==============================================================================
 
-    return data.map((row: any) => ({
+export interface FetchOrdersOptions {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  search?: string;
+  customerId?: string;
+}
+
+export async function fetchOrdersPaginated(
+  options: FetchOrdersOptions = {}
+): Promise<PaginatedResult<Order>> {
+  const { page = 1, pageSize = 15, status, search, customerId } = options;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  try {
+    let query = supabase
+      .from('orders')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    if (customerId) {
+      query = query.eq('customer_id', customerId);
+    }
+
+    if (search && search.trim() !== '') {
+      const term = search.trim();
+      query = query.or(`order_number.ilike.%${term}%,customer_name.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_email.ilike.%${term}%`);
+    }
+
+    query = query.range(from, to);
+    const { data, count, error } = await query;
+
+    if (error) {
+      return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: error.message };
+    }
+
+    const totalCount = count || 0;
+    const orders: Order[] = (data || []).map((row: any) => ({
       id: row.id,
       orderNumber: row.order_number,
       customerId: row.customer_id || '',
@@ -252,18 +409,30 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
       createdAt: row.created_at || new Date().toISOString(),
       updatedAt: row.updated_at || new Date().toISOString(),
     }));
-  } catch (e) {
-    console.warn('Error fetching orders from Supabase:', e);
-    return null;
+
+    return {
+      data: orders,
+      totalCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalCount / pageSize),
+    };
+  } catch (err: any) {
+    return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: err.message };
   }
 }
 
-export async function saveOrderToSupabase(order: Order): Promise<boolean> {
+export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
+  const res = await fetchOrdersPaginated({ page: 1, pageSize: 100 });
+  return res.error ? null : res.data;
+}
+
+export async function saveOrderToSupabase(order: Order): Promise<{ success: boolean; error?: string }> {
   try {
     const row = {
       id: order.id,
       order_number: order.orderNumber,
-      customer_id: order.customerId,
+      customer_id: order.customerId && order.customerId.trim() !== '' ? order.customerId : null,
       customer_name: order.customerName,
       customer_email: order.customerEmail,
       customer_phone: order.customerPhone,
@@ -287,54 +456,569 @@ export async function saveOrderToSupabase(order: Order): Promise<boolean> {
 
     const { error } = await supabase.from('orders').upsert(row, { onConflict: 'id' });
     if (error) {
-      console.warn('Supabase order upsert error:', error.message);
-      return false;
+      console.error('Order save error:', error.message);
+      return { success: false, error: error.message };
     }
-    return true;
-  } catch (err) {
-    console.warn('Failed to save order to Supabase:', err);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateOrderStatusInSupabase(
+  orderId: string,
+  status: OrderStatus
+): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', orderId);
+    return !error;
+  } catch {
     return false;
   }
 }
 
-/**
- * USERS & PROFILES SYNC
- * Primary integration with Supabase Auth linked public.profiles
- */
-export async function fetchUsersFromSupabase(): Promise<User[] | null> {
+// ==============================================================================
+// 4. COUPONS
+// ==============================================================================
+
+export async function fetchCouponsFromSupabase(): Promise<Coupon[] | null> {
   try {
-    // Query profiles table
-    const { data, error } = await supabase.from('profiles').select('*');
-    if (error || !data) {
-      // Fallback to legacy users table if profiles not yet populated
-      const res = await supabase.from('users').select('*');
-      if (res.error || !res.data) return null;
-      return res.data.map((row: any) => ({
-        id: row.id,
-        name: row.name,
-        email: row.email,
-        phone: row.phone,
-        role: row.role || 'customer',
-        addresses: Array.isArray(row.addresses) ? row.addresses : [],
-        isActive: row.is_active !== false,
-        createdAt: row.created_at || new Date().toISOString(),
-      }));
-    }
+    const { data, error } = await supabase.from('coupons').select('*');
+    if (error || !data) return null;
 
     return data.map((row: any) => ({
       id: row.id,
-      name: row.name || 'User',
-      email: '', // Email is protected in auth.users
+      code: row.code,
+      description: row.description || '',
+      discountType: (row.discount_type?.toUpperCase() === 'FIXED' ? 'FIXED' : 'PERCENTAGE') as any,
+      discountValue: Number(row.discount_value) || 0,
+      minOrderAmount: Number(row.min_order_amount) || 0,
+      maxDiscountAmount: row.max_discount ? Number(row.max_discount) : undefined,
+      validUntil: row.expiry_date || new Date(Date.now() + 8640000000).toISOString(),
+      isActive: row.is_active !== false,
+      usageCount: Number(row.usage_count) || 0,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCouponToSupabase(coupon: Coupon): Promise<boolean> {
+  try {
+    const row = {
+      id: coupon.id,
+      code: coupon.code.toUpperCase().trim(),
+      description: coupon.description,
+      discount_type: coupon.discountType.toLowerCase(),
+      discount_value: coupon.discountValue,
+      min_order_amount: coupon.minOrderAmount,
+      max_discount: coupon.maxDiscountAmount || null,
+      expiry_date: coupon.validUntil,
+      is_active: coupon.isActive,
+    };
+    const { error } = await supabase.from('coupons').upsert(row, { onConflict: 'id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteCouponFromSupabase(couponId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('coupons').delete().eq('id', couponId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================================================================
+// 5. STORE SETTINGS (Public Settings View & Admin Settings Table)
+// ==============================================================================
+
+export async function fetchSettingsFromSupabase(): Promise<StoreSettings | null> {
+  try {
+    // Attempt reading public_settings view (available to public and authenticated)
+    let { data, error } = await supabase.from('public_settings').select('*').limit(1).single();
+
+    if (error || !data) {
+      // Fallback to direct settings table
+      const res = await supabase.from('settings').select('*').limit(1).single();
+      data = res.data;
+    }
+
+    if (!data) return null;
+
+    return {
+      storeName: data.store_name || 'Nirai',
+      taglineEn: data.tagline_en || '',
+      taglineTa: data.tagline_ta || '',
+      logo: data.logo || { altText: 'Nirai Traditional Handlooms' },
+      heroSlides: Array.isArray(data.hero_slides) ? data.hero_slides : [],
+      promoBanner: data.promo_banner || {},
+      homepageSections: Array.isArray(data.homepage_sections) ? data.homepage_sections : [],
+      freeShippingThreshold: Number(data.free_shipping_threshold) || 1500,
+      standardShippingFee: Number(data.standard_shipping_fee) || 120,
+      shippingRules: data.shipping_rules || {
+        tamilNaduStandard: 80,
+        tamilNaduExpress: 160,
+        indiaStandard: 120,
+        indiaExpress: 220,
+      },
+      announcementEn: data.announcement_en || '',
+      announcementTa: data.announcement_ta || '',
+      supportPhone: '+91 44 2498 7654',
+      supportEmail: 'care@nirai.in',
+      isAnnouncementActive: data.is_announcement_active !== false,
+      bankDetails: data.bank_details,
+      upiDetails: data.upi_details,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSettingsToSupabase(settings: StoreSettings): Promise<boolean> {
+  try {
+    const row = {
+      id: 'nirai_main_settings',
+      store_name: settings.storeName,
+      tagline_en: settings.taglineEn,
+      tagline_ta: settings.taglineTa,
+      logo: settings.logo,
+      hero_slides: settings.heroSlides,
+      promo_banner: settings.promoBanner,
+      homepage_sections: settings.homepageSections,
+      free_shipping_threshold: settings.freeShippingThreshold,
+      standard_shipping_fee: settings.standardShippingFee,
+      shipping_rules: settings.shippingRules,
+      announcement_en: settings.announcementEn,
+      announcement_ta: settings.announcementTa,
+      is_announcement_active: settings.isAnnouncementActive,
+      bank_details: settings.bankDetails,
+      upi_details: settings.upiDetails,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('settings').upsert(row, { onConflict: 'id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================================================================
+// 6. SUPPLIERS & COURIER PARTNERS
+// ==============================================================================
+
+export async function fetchSuppliersFromSupabase(): Promise<Supplier[] | null> {
+  try {
+    const { data, error } = await supabase.from('suppliers').select('*');
+    if (error || !data) return null;
+    return data.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      contactPerson: s.contact_person,
+      phone: s.phone,
+      email: s.email,
+      city: s.city,
+      state: s.state,
+      leadTimeDays: s.lead_time_days || 7,
+      isActive: s.is_active !== false,
+      notes: s.notes,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSupplierToSupabase(s: Supplier): Promise<boolean> {
+  try {
+    const row = {
+      id: s.id,
+      name: s.name,
+      contact_person: s.contactPerson,
+      phone: s.phone,
+      email: s.email,
+      city: s.city,
+      state: s.state,
+      lead_time_days: s.leadTimeDays,
+      is_active: s.isActive,
+      notes: s.notes,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('suppliers').upsert(row, { onConflict: 'id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteSupplierFromSupabase(id: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchCouriersFromSupabase(): Promise<CourierPartner[] | null> {
+  try {
+    const { data, error } = await supabase.from('courier_partners').select('*');
+    if (error || !data) return null;
+    return data.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      phone: c.phone,
+      email: c.email,
+      deliveryDays: c.delivery_days,
+      coverage: c.coverage,
+      trackingUrlTemplate: c.tracking_url_template,
+      badgeText: c.badge_text,
+      isActive: c.is_active !== false,
+      notes: c.notes,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCourierToSupabase(c: CourierPartner): Promise<boolean> {
+  try {
+    const row = {
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      phone: c.phone,
+      email: c.email,
+      delivery_days: c.deliveryDays,
+      coverage: c.coverage,
+      tracking_url_template: c.trackingUrlTemplate,
+      badge_text: c.badgeText,
+      is_active: c.isActive,
+      notes: c.notes,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('courier_partners').upsert(row, { onConflict: 'id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteCourierFromSupabase(id: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('courier_partners').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================================================================
+// 7. STOCK MOVEMENTS (Audited via DB Trigger & RPC)
+// ==============================================================================
+
+export async function fetchStockMovementsFromSupabase(
+  productId?: string,
+  limit = 50
+): Promise<StockMovement[]> {
+  try {
+    let query = supabase
+      .from('stock_movements')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (productId) {
+      query = query.eq('product_id', productId);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) return [];
+
+    return data.map((m: any) => ({
+      id: m.id,
+      productId: m.product_id,
+      productName: '',
+      sku: '',
+      type: m.change_amount >= 0 ? 'RESTOCK' : 'DISPATCH',
+      quantityDelta: m.change_amount,
+      previousStock: m.previous_stock,
+      newStock: m.new_stock,
+      reason: m.reason || 'Inventory Adjustment',
+      performedBy: m.performed_by || 'Staff',
+      timestamp: m.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function adjustStockViaRpc(
+  productId: string,
+  delta: number,
+  reason: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('adjust_product_stock', {
+      p_product_id: productId,
+      p_delta: delta,
+      p_reason: reason,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ==============================================================================
+// 8. MEDIA LIBRARY
+// ==============================================================================
+
+export async function fetchMediaItemsFromSupabase(category?: string): Promise<MediaItem[]> {
+  try {
+    let query = supabase.from('media_library').select('*').order('created_at', { ascending: false });
+    if (category && category !== 'all') {
+      query = query.eq('category', category);
+    }
+    const { data, error } = await query;
+    if (error || !data) return [];
+
+    return data.map((m: any) => ({
+      id: m.id,
+      url: m.secure_url || m.url,
+      publicId: m.public_id,
+      filename: m.public_id.split('/').pop() || 'image',
+      fileSize: m.bytes || 0,
+      width: m.width,
+      height: m.height,
+      format: m.format || 'jpg',
+      category: m.category || 'general',
+      altText: m.alt_text,
+      createdAt: m.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function saveMediaItemToSupabase(item: {
+  url: string;
+  secureUrl: string;
+  publicId: string;
+  folder?: string;
+  category?: string;
+  altText?: string;
+  width?: number;
+  height?: number;
+  format?: string;
+  bytes?: number;
+}): Promise<boolean> {
+  try {
+    const row = {
+      url: item.url,
+      secure_url: item.secureUrl,
+      public_id: item.publicId,
+      folder: item.folder || 'nirai/media',
+      category: item.category || 'general',
+      alt_text: item.altText,
+      width: item.width,
+      height: item.height,
+      format: item.format,
+      bytes: item.bytes,
+    };
+    const { error } = await supabase.from('media_library').upsert(row, { onConflict: 'public_id' });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteMediaItemFromSupabase(publicId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('media_library').delete().eq('public_id', publicId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// ==============================================================================
+// 9. VERIFIED REVIEWS
+// ==============================================================================
+
+export async function fetchProductReviews(productId: string): Promise<ProductReview[]> {
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((r: any) => ({
+      id: r.id,
+      productId: r.product_id,
+      userId: r.user_id,
+      customerName: r.user_name || 'Verified Customer',
+      rating: r.rating,
+      title: r.title,
+      comment: r.comment,
+      date: r.created_at,
+      verifiedPurchase: Boolean(r.verified_purchase),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function submitProductReview(review: {
+  productId: string;
+  rating: number;
+  title?: string;
+  comment: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Please sign in to submit a product review.' };
+    }
+
+    const row = {
+      product_id: review.productId,
+      user_id: user.id,
+      rating: review.rating,
+      title: review.title,
+      comment: review.comment,
+    };
+
+    const { error } = await supabase.from('reviews').insert(row);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ==============================================================================
+// 10. WISHLISTS & GUEST WISHLIST MERGE
+// ==============================================================================
+
+export async function fetchUserWishlist(): Promise<string[]> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const { data, error } = await supabase
+      .from('wishlists')
+      .select('product_id')
+      .eq('user_id', user.id);
+
+    if (error || !data) return [];
+    return data.map((w: any) => w.product_id);
+  } catch {
+    return [];
+  }
+}
+
+export async function toggleWishlistInSupabase(productId: string): Promise<{ isInWishlist: boolean }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { isInWishlist: false };
+
+  // Check if exists
+  const { data } = await supabase
+    .from('wishlists')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('product_id', productId)
+    .maybeSingle();
+
+  if (data) {
+    await supabase.from('wishlists').delete().eq('id', data.id);
+    return { isInWishlist: false };
+  } else {
+    await supabase.from('wishlists').insert({ user_id: user.id, product_id: productId });
+    return { isInWishlist: true };
+  }
+}
+
+export async function syncGuestWishlistRpc(guestProductIds: string[]): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc('sync_guest_wishlist', {
+      p_product_ids: guestProductIds,
+    });
+    if (error || !data) return guestProductIds;
+    return data;
+  } catch {
+    return guestProductIds;
+  }
+}
+
+// ==============================================================================
+// 11. USERS & PROFILES (Paginated for Admin)
+// ==============================================================================
+
+export async function fetchCustomersPaginated(
+  options: { page?: number; pageSize?: number; search?: string } = {}
+): Promise<PaginatedResult<User>> {
+  const { page = 1, pageSize = 15, search } = options;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  try {
+    let query = supabase.from('profiles').select('*', { count: 'exact' });
+
+    if (search && search.trim() !== '') {
+      const term = search.trim();
+      query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
+    }
+
+    query = query.order('created_at', { ascending: false }).range(from, to);
+    const { data, count, error } = await query;
+
+    if (error) {
+      return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: error.message };
+    }
+
+    const totalCount = count || 0;
+    const users: User[] = (data || []).map((row: any) => ({
+      id: row.id,
+      name: row.name || 'Customer',
+      email: '',
       phone: row.phone,
       role: row.role || 'customer',
       addresses: [],
       isActive: row.is_active !== false,
       createdAt: row.created_at || new Date().toISOString(),
     }));
-  } catch (e) {
-    console.warn('Error fetching users/profiles from Supabase:', e);
-    return null;
+
+    return {
+      data: users,
+      totalCount,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalCount / pageSize),
+    };
+  } catch (err: any) {
+    return { data: [], totalCount: 0, page, pageSize, totalPages: 0, error: err.message };
   }
+}
+
+export async function fetchUsersFromSupabase(): Promise<User[] | null> {
+  const res = await fetchCustomersPaginated({ page: 1, pageSize: 100 });
+  return res.error ? null : res.data;
 }
 
 export async function fetchProfileFromSupabase(userId: string): Promise<User | null> {
@@ -347,7 +1031,6 @@ export async function fetchProfileFromSupabase(userId: string): Promise<User | n
 
     if (error || !data) return null;
 
-    // Fetch associated normalized addresses
     const { data: addressRows } = await supabase
       .from('addresses')
       .select('*')
@@ -397,175 +1080,5 @@ export async function saveUserToSupabase(user: User): Promise<boolean> {
   } catch (err) {
     console.warn('Failed to save user profile to Supabase:', err);
     return false;
-  }
-}
-
-/**
- * COUPONS SYNC
- */
-export async function fetchCouponsFromSupabase(): Promise<Coupon[] | null> {
-  try {
-    const { data, error } = await supabase.from('coupons').select('*');
-    if (error || !data) return null;
-
-    return data.map((row: any) => ({
-      id: row.id,
-      code: row.code,
-      description: row.description || '',
-      discountType: (row.discount_type === 'fixed' || row.discount_type === 'FIXED') ? 'FIXED' : 'PERCENTAGE',
-      discountValue: Number(row.discount_value) || 0,
-      minOrderAmount: Number(row.min_order_amount) || 0,
-      maxDiscountAmount: row.max_discount ? Number(row.max_discount) : undefined,
-      validUntil: row.expiry_date || new Date(Date.now() + 30 * 86400000).toISOString(),
-      isActive: row.is_active !== false,
-      usageCount: Number(row.usage_count) || 0,
-    }));
-  } catch {
-    return null;
-  }
-}
-
-export async function saveCouponToSupabase(coupon: Coupon): Promise<boolean> {
-  try {
-    const row = {
-      id: coupon.id,
-      code: coupon.code.toUpperCase().trim(),
-      description: coupon.description,
-      discount_type: coupon.discountType.toLowerCase(),
-      discount_value: coupon.discountValue,
-      min_order_amount: coupon.minOrderAmount,
-      max_discount: coupon.maxDiscountAmount || null,
-      expiry_date: coupon.validUntil,
-      is_active: coupon.isActive,
-      usage_count: coupon.usageCount || 0,
-    };
-    const { error } = await supabase.from('coupons').upsert(row, { onConflict: 'id' });
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-export async function deleteCouponFromSupabase(id: string): Promise<boolean> {
-  try {
-    const { error } = await supabase.from('coupons').delete().eq('id', id);
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * SETTINGS SYNC
- */
-export async function fetchSettingsFromSupabase(): Promise<StoreSettings | null> {
-  try {
-    const { data, error } = await supabase.from('settings').select('*').limit(1).single();
-    if (error || !data) return null;
-
-    return {
-      storeName: data.store_name || 'Nirai',
-      taglineEn: data.tagline_en || '',
-      taglineTa: data.tagline_ta || '',
-      logo: data.logo || {},
-      heroSlides: data.hero_slides || [],
-      promoBanner: data.promo_banner || {},
-      homepageSections: data.homepage_sections || [],
-      freeShippingThreshold: Number(data.free_shipping_threshold) || 1500,
-      standardShippingFee: Number(data.standard_shipping_fee) || 120,
-      shippingRules: data.shipping_rules || {
-        tamilNaduStandard: 80,
-        tamilNaduExpress: 160,
-        indiaStandard: 120,
-        indiaExpress: 220,
-      },
-      announcementEn: data.announcement_en || '',
-      announcementTa: data.announcement_ta || '',
-      supportPhone: data.support_phone || '+91 44 2498 7654',
-      supportEmail: data.support_email || 'care@nirai.in',
-      isAnnouncementActive: data.is_announcement_active !== false,
-      bankDetails: data.bank_details || {
-        bankName: 'HDFC Bank',
-        accountName: 'NIRAI HANDLOOMS',
-        accountNumber: '50200088992211',
-        ifscCode: 'HDFC0001244',
-        branch: 'Cathedral Road, Chennai',
-      },
-      upiDetails: data.upi_details || {
-        upiId: 'niraihandlooms@hdfcbank',
-        merchantName: 'Nirai Handlooms',
-        qrCodeNote: 'Scan & Pay with GPay, PhonePe or Paytm',
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-export async function saveSettingsToSupabase(settings: StoreSettings): Promise<boolean> {
-  try {
-    const row = {
-      id: 'nirai_main_settings',
-      store_name: settings.storeName,
-      tagline_en: settings.taglineEn,
-      tagline_ta: settings.taglineTa,
-      logo: settings.logo,
-      hero_slides: settings.heroSlides,
-      promo_banner: settings.promoBanner,
-      homepage_sections: settings.homepageSections,
-      free_shipping_threshold: settings.freeShippingThreshold,
-      standard_shipping_fee: settings.standardShippingFee,
-      shipping_rules: settings.shippingRules,
-      announcement_en: settings.announcementEn,
-      announcement_ta: settings.announcementTa,
-      is_announcement_active: settings.isAnnouncementActive,
-      bank_details: settings.bankDetails,
-      upi_details: settings.upiDetails,
-      updated_at: new Date().toISOString(),
-    };
-    const { error } = await supabase.from('settings').upsert(row, { onConflict: 'id' });
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * AUTO-SEEDING: Seed initial catalog products, categories, coupons, and settings
- * if database tables are empty on mount.
- */
-export async function autoSeedSupabaseIfEmpty(initialData: {
-  products: Product[];
-  categories: Category[];
-  coupons: Coupon[];
-  settings: StoreSettings;
-}): Promise<void> {
-  try {
-    // 1. Check products count
-    const { count, error } = await supabase.from('products').select('*', { count: 'exact', head: true });
-    if (!error && (count === 0 || count === null)) {
-      console.log('🌱 Seeding products into Supabase...');
-      for (const p of initialData.products) {
-        await saveProductToSupabase(p);
-      }
-    }
-
-    // 2. Check categories count
-    const catCheck = await supabase.from('categories').select('*', { count: 'exact', head: true });
-    if (!catCheck.error && (catCheck.count === 0 || catCheck.count === null)) {
-      console.log('🌱 Seeding categories into Supabase...');
-      for (const c of initialData.categories) {
-        await saveCategoryToSupabase(c);
-      }
-    }
-
-    // 3. Check settings
-    const setCheck = await supabase.from('settings').select('id').limit(1);
-    if (!setCheck.error && (!setCheck.data || setCheck.data.length === 0)) {
-      console.log('🌱 Seeding store settings into Supabase...');
-      await saveSettingsToSupabase(initialData.settings);
-    }
-  } catch (err) {
-    console.warn('Auto-seed check note:', err);
   }
 }

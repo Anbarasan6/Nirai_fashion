@@ -27,32 +27,21 @@ export const InventoryManager: React.FC = () => {
     refreshData();
   };
 
-  const handleAdjustStock = (e: React.FormEvent) => {
+  const handleAdjustStock = async (e: React.FormEvent) => {
     e.preventDefault();
     const product = products.find((p) => p.id === selectedProductId);
     if (!product) return;
 
     const qty = adjustmentType === 'DAMAGE' ? -Math.abs(deltaQty) : Number(deltaQty);
-    const prevStock = product.stock;
-    const newStock = Math.max(0, prevStock + qty);
+    const reasonText = adjustmentReason || `${adjustmentType} adjustment in admin portal`;
 
-    product.stock = newStock;
-    StorageService.saveProduct(product);
-
-    StorageService.logStockMovement({
-      productId: product.id,
-      productName: product.nameEn,
-      sku: product.sku,
-      type: adjustmentType,
-      quantityDelta: qty,
-      previousStock: prevStock,
-      newStock,
-      reason: adjustmentReason || 'Stock manual adjustment',
-      performedBy: 'Admin (Operations)',
-    });
-
-    syncInventory();
-    showToast(`Stock updated for ${product.nameEn}: ${newStock} units`, 'success');
+    const res = await StorageService.adjustProductStock(selectedProductId, qty, reasonText);
+    if (res.success) {
+      syncInventory();
+      showToast(`Stock updated for ${product.nameEn} (${qty > 0 ? `+${qty}` : qty})`, 'success');
+    } else {
+      showToast(res.error || 'Failed to adjust stock. Please try again.', 'error');
+    }
   };
 
   return (

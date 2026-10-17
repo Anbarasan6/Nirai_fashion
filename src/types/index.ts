@@ -58,11 +58,22 @@ export interface ProductVariant {
 export interface ProductReview {
   id: string;
   productId: string;
+  userId?: string;
   customerName: string;
   rating: number; // 1 - 5
+  title?: string;
   comment: string;
   date: string;
   verifiedPurchase: boolean;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  error?: string | null;
 }
 
 export interface Product {
@@ -263,7 +274,7 @@ export interface StockMovement {
   productId: string;
   productName: string;
   sku: string;
-  type: 'RECEIPT' | 'SALE' | 'ADJUSTMENT' | 'DAMAGE' | 'RETURN';
+  type: 'RECEIPT' | 'SALE' | 'ADJUSTMENT' | 'DAMAGE' | 'RETURN' | 'RESTOCK' | 'DISPATCH';
   quantityDelta: number; // positive or negative
   previousStock: number;
   newStock: number;

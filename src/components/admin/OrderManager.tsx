@@ -275,6 +275,8 @@ export const OrderManager: React.FC = () => {
     return acc;
   }, {} as Record<string, number>);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const currentTab = FILTER_TABS.find((t) => t.id === activeTab) || FILTER_TABS[0];
 
   const filteredOrders = orders.filter((o) => {
@@ -290,6 +292,9 @@ export const OrderManager: React.FC = () => {
 
     return matchesSearch && matchesTab;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const paginatedOrders = filteredOrders.slice((page - 1) * pageSize, page * pageSize);
 
   const handleCourierChange = (val: string) => {
     setCourierName(val);
@@ -443,7 +448,7 @@ export const OrderManager: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((order) => (
+                paginatedOrders.map((order) => (
                   <tr key={order.id} className="hover:bg-stone-50/70 transition-colors">
                     <td className="py-3 px-4">
                       <span className="font-mono font-bold text-slate-900 block">{order.orderNumber}</span>
@@ -533,6 +538,43 @@ export const OrderManager: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-stone-200 bg-stone-50 text-xs">
+            <span className="text-stone-500">
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filteredOrders.length)} of {filteredOrders.length} orders
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Previous
+              </button>
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => setPage(i + 1)}
+                  className={`w-7 h-7 rounded text-xs font-semibold cursor-pointer ${
+                    page === i + 1
+                      ? 'bg-amber-900 text-white'
+                      : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Manage Order Modal */}

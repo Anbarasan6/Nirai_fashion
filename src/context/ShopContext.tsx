@@ -10,7 +10,12 @@ import {
   StoreSettings,
 } from '../types';
 import { StorageService, subscribeToStore } from '../services/storage';
-import { supabase } from '../services/supabase';
+import {
+  supabase,
+  fetchUserWishlist,
+  toggleWishlistInSupabase,
+  syncGuestWishlistRpc,
+} from '../services/supabase';
 import { getT } from '../data/translations';
 
 export interface ToastItem {
@@ -31,6 +36,11 @@ interface ShopContextType {
   setViewMode: (mode: 'storefront' | 'admin') => void;
   adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers';
   setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers') => void;
+  
+  // Store loading & error retry
+  isStoreLoading: boolean;
+  storeError: string | null;
+  retryStoreSync: () => Promise<void>;
   
   // Auth Modal
   isAuthModalOpen: boolean;
@@ -96,6 +106,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
+  // Wishlist & Store Global State
+  const [wishlist, setWishlist] = useState<string[]>(() => StorageService.getGuestWishlist());
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => StorageService.getSettings());
+  const [products, setProducts] = useState<Product[]>(() => StorageService.getProducts());
+  const [isStoreLoading, setIsStoreLoading] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
   // Sync with Supabase Auth session & onAuthStateChange
   useEffect(() => {
     let isMounted = true;
@@ -149,6 +168,19 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
               createdAt: new Date().toISOString(),
             });
           }
+
+          // Merge guest wishlist on login into Supabase wishlists table
+          try {
+            const guestItems = StorageService.getGuestWishlist();
+            if (guestItems.length > 0) {
+              await syncGuestWishlistRpc(guestItems);
+              StorageService.setGuestWishlist([]);
+            }
+            const remoteWishlist = await fetchUserWishlist();
+            setWishlist(remoteWishlist);
+          } catch (wErr) {
+            console.warn('Wishlist sync note:', wErr);
+          }
         }
       } catch (err) {
         console.warn('Error fetching user profile:', err);
@@ -178,6 +210,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           setCurrentUser(null);
           setIsAuthLoading(false);
+          setWishlist(StorageService.getGuestWishlist());
         }
       }
     });
@@ -190,6 +223,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           setCurrentUser(null);
           setIsAuthLoading(false);
+          setWishlist(StorageService.getGuestWishlist());
         }
       }
     });
@@ -197,6 +231,42 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+    };
+  }, []);
+
+  // Initialize and synchronize store data from Supabase
+  const retryStoreSync = async () => {
+    setIsStoreLoading(true);
+    setStoreError(null);
+    const res = await StorageService.initSupabaseSync();
+    setIsStoreLoading(false);
+    if (!res.success) {
+      setStoreError(res.error || 'Failed to connect to database.');
+    } else {
+      setProducts(StorageService.getProducts());
+      setStoreSettings(StorageService.getSettings());
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    async function init() {
+      setIsStoreLoading(true);
+      setStoreError(null);
+      const res = await StorageService.initSupabaseSync();
+      if (active) {
+        setIsStoreLoading(false);
+        if (!res.success) {
+          setStoreError(res.error || 'Failed to load catalog from database.');
+        } else {
+          setProducts(StorageService.getProducts());
+          setStoreSettings(StorageService.getSettings());
+        }
+      }
+    }
+    init();
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -263,27 +333,13 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
-  // Wishlist & Store
-  const [wishlist, setWishlist] = useState<string[]>(() => StorageService.getWishlist());
-  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => StorageService.getSettings());
-  const [products, setProducts] = useState<Product[]>(() => StorageService.getProducts());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-
-  // Sync cart to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('nirai_cart', JSON.stringify(cart));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [cart]);
-
   // Subscribe to storage changes across the app
   const refreshData = () => {
     setProducts(StorageService.getProducts());
     setStoreSettings(StorageService.getSettings());
-    setWishlist(StorageService.getWishlist());
+    if (!currentUser) {
+      setWishlist(StorageService.getGuestWishlist());
+    }
   };
 
   useEffect(() => {
@@ -425,11 +481,23 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const cartGrandTotal = Math.max(0, cartSubtotal - couponDiscount + shippingFee);
 
-  // Wishlist
-  const toggleWishlist = (productId: string) => {
-    const isAdded = StorageService.toggleWishlist(productId);
-    setWishlist(StorageService.getWishlist());
-    showToast(isAdded ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+  // Wishlist (Supabase for authenticated users, localStorage for guests)
+  const toggleWishlist = async (productId: string) => {
+    if (currentUser) {
+      try {
+        const { isInWishlist } = await toggleWishlistInSupabase(productId);
+        setWishlist((prev) =>
+          isInWishlist ? [...prev, productId] : prev.filter((id) => id !== productId)
+        );
+        showToast(isInWishlist ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+      } catch (err: any) {
+        showToast(err.message || 'Wishlist update failed', 'error');
+      }
+    } else {
+      const isAdded = StorageService.toggleWishlist(productId);
+      setWishlist(StorageService.getGuestWishlist());
+      showToast(isAdded ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+    }
   };
 
   const isInWishlist = (productId: string) => wishlist.includes(productId);
@@ -450,6 +518,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setViewMode,
         adminTab,
         setAdminTab,
+        isStoreLoading,
+        storeError,
+        retryStoreSync,
         activeTab,
         setActiveTab,
         selectedProductSlug,

@@ -70,6 +70,9 @@ export const CustomerManager: React.FC = () => {
     };
   };
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
   // Filter strictly for customers (dealers and internal operators are excluded)
   const filteredUsers = users
     .filter((u) => u.role === 'customer')
@@ -85,6 +88,9 @@ export const CustomerManager: React.FC = () => {
 
       return matchesSearch && matchesStatus;
     });
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const paginatedUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
 
   // Toggle Account Active / Inactive
   const handleToggleStatus = (user: User) => {
@@ -304,7 +310,7 @@ export const CustomerManager: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => {
+                paginatedUsers.map((user) => {
                   const stats = getCustomerStats(user);
                   return (
                     <tr key={user.id} className="hover:bg-amber-50/30 transition-colors">
@@ -403,6 +409,43 @@ export const CustomerManager: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-stone-200 bg-stone-50 text-xs">
+            <span className="text-stone-500">
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filteredUsers.length)} of {filteredUsers.length} customers
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Previous
+              </button>
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => setPage(i + 1)}
+                  className={`w-7 h-7 rounded text-xs font-semibold cursor-pointer ${
+                    page === i + 1
+                      ? 'bg-amber-900 text-white'
+                      : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Customer Profile & Order History Modal */}
