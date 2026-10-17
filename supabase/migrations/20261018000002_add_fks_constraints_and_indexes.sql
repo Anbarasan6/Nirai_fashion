@@ -42,6 +42,13 @@ BEGIN
 END $$;
 
 -- Normalize orders.customer_id to UUID and reference auth.users(id)
+-- Drop existing policies that depend on customer_id before altering column type
+DROP POLICY IF EXISTS "Users view own orders or admin all" ON public.orders;
+DROP POLICY IF EXISTS "Anyone can create order" ON public.orders;
+DROP POLICY IF EXISTS "Admins can update orders" ON public.orders;
+DROP POLICY IF EXISTS "Customers view own orders" ON public.orders;
+DROP POLICY IF EXISTS "Authenticated users create own order" ON public.orders;
+
 DO $$
 BEGIN
   -- Convert column type to UUID safely if it was TEXT
