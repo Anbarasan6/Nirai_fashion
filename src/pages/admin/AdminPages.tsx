@@ -11,6 +11,7 @@ import { OrderManager } from '../../components/admin/OrderManager';
 import { CustomerManager } from '../../components/admin/CustomerManager';
 import { InventoryManager } from '../../components/admin/InventoryManager';
 import { SupplierManager } from '../../components/admin/SupplierManager';
+import { CourierManager } from '../../components/admin/CourierManager';
 import { CouponManager } from '../../components/admin/CouponManager';
 import { ContentManager } from '../../components/admin/ContentManager';
 import { ToastContainer } from '../../components/common/ToastContainer';
@@ -34,6 +35,7 @@ export const AdminPages: React.FC = () => {
       'orders',
       'inventory',
       'suppliers',
+      'couriers',
       'coupons',
       'content',
       'customers',
@@ -57,6 +59,7 @@ export const AdminPages: React.FC = () => {
       {currentTab === 'customers' && <CustomerManager />}
       {currentTab === 'inventory' && <InventoryManager />}
       {currentTab === 'suppliers' && <SupplierManager />}
+      {currentTab === 'couriers' && <CourierManager />}
       {currentTab === 'coupons' && <CouponManager />}
       {currentTab === 'content' && <ContentManager />}
 

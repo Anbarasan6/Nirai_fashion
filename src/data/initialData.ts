@@ -1,4 +1,4 @@
-import { Product, Category, Supplier, Coupon, Banner, Order, User, StoreSettings, MediaItem } from '../types';
+import { Product, Category, Supplier, CourierPartner, Coupon, Banner, Order, User, StoreSettings, MediaItem } from '../types';
 
 export const initialCategories: Category[] = [
   {
@@ -120,6 +120,69 @@ export const initialSuppliers: Supplier[] = [
     notes: 'Handwoven natural dyed Chettinad cotton sarees and temple borders.',
     isActive: true,
     productsSuppliedCount: 3,
+  },
+];
+
+export const initialCouriers: CourierPartner[] = [
+  {
+    id: 'courier-bluedart',
+    name: 'BLUE DART EXPRESS',
+    code: 'BLUEDART',
+    phone: '+91 1860 233 1234',
+    email: 'support@bluedart.com',
+    deliveryDays: '2 - 3 Business Days',
+    coverage: 'Primary air express partner for metro cities & tier-1 quick dispatch.',
+    trackingUrlTemplate: 'https://www.bluedart.com/tracking?track={trackingId}',
+    badgeText: 'BLUEDART',
+    isActive: true,
+  },
+  {
+    id: 'courier-delhivery',
+    name: 'DELHIVERY LOGISTICS',
+    code: 'DELHIVERY',
+    phone: '+91 124 6719500',
+    email: 'support@delhivery.com',
+    deliveryDays: '3 - 5 Business Days',
+    coverage: 'Surface & air network covering 18,500+ pincodes.',
+    trackingUrlTemplate: 'https://www.delhivery.com/track/package/{trackingId}',
+    badgeText: 'DELHIVERY',
+    isActive: true,
+  },
+  {
+    id: 'courier-dtdc',
+    name: 'DTDC EXPRESS',
+    code: 'DTDC',
+    phone: '+91 73057 70477',
+    email: 'customersupport@dtdc.com',
+    deliveryDays: '3 - 4 Business Days',
+    coverage: 'Reliable South Indian regional & tier-2/3 town coverage.',
+    trackingUrlTemplate: 'https://www.dtdc.in/tracking/tracking_results.asp?trType=awb_no&strAwbNo={trackingId}',
+    badgeText: 'DTDC',
+    isActive: true,
+  },
+  {
+    id: 'courier-indiapost',
+    name: 'INDIA POST SPEED POST',
+    code: 'INDIA POST',
+    phone: '+91 1800 266 6868',
+    email: 'ccc@indiapost.gov.in',
+    deliveryDays: '4 - 6 Business Days',
+    coverage: 'Government postal network reaching remote and rural villages.',
+    trackingUrlTemplate: 'https://www.indiapost.gov.in/_layouts/15/dpt.cptc.portal/tracking/trackconsignment.aspx?consignmentid={trackingId}',
+    badgeText: 'INDIA POST',
+    isActive: true,
+  },
+  {
+    id: 'courier-professional',
+    name: 'PROFESSIONAL COURIERS',
+    code: 'PROFESSIONAL',
+    phone: '+91 44 2829 2041',
+    email: 'chennai@tpcglobe.com',
+    deliveryDays: '2 - 4 Business Days',
+    coverage: 'Fast local Tamil Nadu & South India hub distribution.',
+    trackingUrlTemplate: 'https://www.tpcindia.com/Tracking_search.aspx?id={trackingId}',
+    badgeText: 'PROFESSIONAL',
+    isActive: true,
   },
 ];
 
@@ -985,14 +1048,14 @@ export const initialStoreSettings: StoreSettings = {
   freeShippingThreshold: 1500,
   standardShippingFee: 120,
   shippingRules: {
-    tamilNaduStandard: 80,
-    tamilNaduExpress: 160,
+    tamilNaduStandard: 40,
+    tamilNaduExpress: 149,
     indiaStandard: 120,
-    indiaExpress: 220,
+    indiaExpress: 299,
   },
   bankDetails: {
     bankName: 'HDFC Bank',
-    accountName: 'NIRAI HANDLOOMS PRIVATE LIMITED',
+    accountName: 'NIRAI HANDLOOMS',
     accountNumber: '50200088992211',
     ifscCode: 'HDFC0001244',
     branch: 'Cathedral Road, Chennai',

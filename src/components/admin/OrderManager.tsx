@@ -46,6 +46,7 @@ const COURIER_OPTIONS = [
   { label: 'Delhivery Logistics', value: 'Delhivery Logistics', url: 'https://www.delhivery.com' },
   { label: 'DTDC Express', value: 'DTDC Express', url: 'https://www.dtdc.in' },
   { label: 'India Post Speed Post', value: 'India Post Speed Post', url: 'https://www.indiapost.gov.in' },
+  { label: 'Professional Couriers', value: 'Professional Couriers', url: 'https://www.tpcindia.com' },
   { label: 'Ekart Logistics', value: 'Ekart Logistics', url: 'https://ekartlogistics.com' },
   { label: 'Xpressbees', value: 'Xpressbees', url: 'https://www.xpressbees.com' },
   { label: 'Ecom Express', value: 'Ecom Express', url: 'https://ecomexpress.in' },

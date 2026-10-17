@@ -210,6 +210,20 @@ export interface Supplier {
   productsSuppliedCount?: number;
 }
 
+export interface CourierPartner {
+  id: string;
+  name: string;
+  code: string;
+  phone: string;
+  email: string;
+  deliveryDays: string;
+  coverage: string;
+  trackingUrlTemplate: string;
+  badgeText?: string;
+  isActive: boolean;
+  notes?: string;
+}
+
 export interface StockMovement {
   id: string;
   productId: string;

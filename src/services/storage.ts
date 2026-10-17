@@ -2,6 +2,7 @@ import {
   Product,
   Category,
   Supplier,
+  CourierPartner,
   Coupon,
   Banner,
   Order,
@@ -21,6 +22,7 @@ import {
   initialCategories,
   initialProducts,
   initialSuppliers,
+  initialCouriers,
   initialCoupons,
   initialBanners,
   initialOrders,
@@ -52,6 +54,7 @@ const KEYS = {
   PRODUCTS: 'nirai_products_v1',
   CATEGORIES: 'nirai_categories_v1',
   SUPPLIERS: 'nirai_suppliers_v1',
+  COURIERS: 'nirai_couriers_v1',
   COUPONS: 'nirai_coupons_v1',
   BANNERS: 'nirai_banners_v1',
   ORDERS: 'nirai_orders_v1',
@@ -231,6 +234,27 @@ export const StorageService = {
   deleteSupplier(id: string): void {
     const list = this.getSuppliers().filter((s) => s.id !== id);
     setItem(KEYS.SUPPLIERS, list);
+  },
+
+  // COURIER PARTNERS
+  getCourierPartners(): CourierPartner[] {
+    return getItem<CourierPartner[]>(KEYS.COURIERS, initialCouriers);
+  },
+
+  saveCourierPartner(courier: CourierPartner): void {
+    const list = this.getCourierPartners();
+    const idx = list.findIndex((c) => c.id === courier.id);
+    if (idx >= 0) {
+      list[idx] = courier;
+    } else {
+      list.push(courier);
+    }
+    setItem(KEYS.COURIERS, list);
+  },
+
+  deleteCourierPartner(id: string): void {
+    const list = this.getCourierPartners().filter((c) => c.id !== id);
+    setItem(KEYS.COURIERS, list);
   },
 
   // ORDERS
@@ -818,6 +842,7 @@ export const StorageService = {
     setItem(KEYS.PRODUCTS, initialProducts);
     setItem(KEYS.CATEGORIES, initialCategories);
     setItem(KEYS.SUPPLIERS, initialSuppliers);
+    setItem(KEYS.COURIERS, initialCouriers);
     setItem(KEYS.COUPONS, initialCoupons);
     setItem(KEYS.BANNERS, initialBanners);
     setItem(KEYS.ORDERS, initialOrders);

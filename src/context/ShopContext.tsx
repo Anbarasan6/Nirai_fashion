@@ -26,8 +26,8 @@ interface ShopContextType {
   isAdmin: boolean;
   viewMode: 'storefront' | 'admin';
   setViewMode: (mode: 'storefront' | 'admin') => void;
-  adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers';
-  setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers') => void;
+  adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers';
+  setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers') => void;
   
   // Auth Modal
   isAuthModalOpen: boolean;
@@ -94,7 +94,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return users.find((u) => u.role === 'customer') || null;
   });
   const [viewMode, setViewMode] = useState<'storefront' | 'admin'>('storefront');
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'coupons' | 'content' | 'customers'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers'>('dashboard');
   const [activeTab, setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
   const [selectedProductSlug, setSelectedProductSlug] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);

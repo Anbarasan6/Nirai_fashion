@@ -51,8 +51,9 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'inventory', label: 'Inventory & Audit', icon: Boxes },
     { id: 'suppliers', label: 'Suppliers (Internal)', icon: Truck },
+    { id: 'couriers', label: 'Courier & Shipping Rates', icon: Truck },
     { id: 'coupons', label: 'Coupons & Offers', icon: Tag },
-    { id: 'content', label: 'Banners & Settings', icon: Megaphone },
+    { id: 'content', label: 'Shipping, Banners & Settings', icon: Megaphone },
   ];
 
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -307,8 +308,8 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         {/* Top Header Bar */}
         <header className="h-16 bg-white border-b border-[#E2DBD0] px-6 flex items-center justify-between gap-4 sticky top-0 z-30 shadow-2xs">
           <div className="flex items-center gap-3">
-            <h1 className="font-serif text-lg font-bold text-slate-900 capitalize">
-              {adminTab.replace('-', ' ')}
+            <h1 className="font-serif text-lg font-bold text-slate-900 uppercase">
+              {adminTab === 'couriers' ? 'COURIERS' : adminTab.replace('-', ' ')}
             </h1>
             <span className="text-xs text-stone-500">· Nirai Central Management Engine</span>
           </div>
