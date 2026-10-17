@@ -20,6 +20,9 @@ import {
   ProductReview,
   PaginatedResult,
   OrderStatus,
+  CartQuote,
+  PlaceOrderPayload,
+  TrackingResult,
 } from '../types';
 
 export const SUPABASE_URL = env.VITE_SUPABASE_URL;
@@ -1082,3 +1085,135 @@ export async function saveUserToSupabase(user: User): Promise<boolean> {
     return false;
   }
 }
+
+// ==============================================================================
+// 12. SERVER-SIDE ORDER ENGINE (Secure RPCs)
+// ==============================================================================
+
+export async function quoteCartViaRpc(
+  items: Array<{ productId: string; variantId?: string | null; quantity: number }>,
+  couponCode?: string,
+  pincode?: string
+): Promise<{ success: boolean; data?: CartQuote; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('quote_cart', {
+      p_items: items,
+      p_coupon_code: couponCode?.trim() || null,
+      p_pincode: pincode?.trim() || null,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Unable to quote cart' };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Cart quote request failed' };
+  }
+}
+
+export async function placeOrderViaRpc(
+  payload: PlaceOrderPayload
+): Promise<{ success: boolean; data?: { orderId: string; orderNumber: string; idempotentReplay?: boolean }; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('place_order', {
+      p_payload: payload,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Order placement failed' };
+    }
+
+    return {
+      success: true,
+      data: {
+        orderId: data.order_id,
+        orderNumber: data.order_number,
+        idempotentReplay: data.idempotent_replay,
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Order placement transaction failed' };
+  }
+}
+
+export async function trackOrderViaRpc(
+  orderNumber: string,
+  phone: string
+): Promise<{ success: boolean; data?: TrackingResult; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('track_order', {
+      p_order_number: orderNumber.trim(),
+      p_phone: phone.trim(),
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'No matching order found' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Order tracking request failed' };
+  }
+}
+
+export async function updateOrderStatusViaRpc(
+  orderId: string,
+  newStatus: OrderStatus,
+  paymentStatus?: string,
+  shippingDetails?: any,
+  notes?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('update_order_status', {
+      p_order_id: orderId,
+      p_new_status: newStatus,
+      p_payment_status: paymentStatus || null,
+      p_shipping_details: shippingDetails || null,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Failed to update order status' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Status transition failed' };
+  }
+}
+
+export async function cancelOrderViaRpc(
+  orderId: string,
+  reason?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('cancel_order', {
+      p_order_id: orderId,
+      p_reason: reason || 'Customer requested cancellation',
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Order cancellation failed' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Cancellation request failed' };
+  }
+}
+

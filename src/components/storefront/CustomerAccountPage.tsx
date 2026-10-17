@@ -57,6 +57,26 @@ export const CustomerAccountPage: React.FC = () => {
   const publicProducts = StorageService.getPublicProducts();
   const wishlistProducts = publicProducts.filter((p) => wishlist.includes(p.id));
   const userAddresses: Address[] = currentUser?.addresses || [];
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+
+  const handleCancelOrder = async (orderId: string, orderNumber: string) => {
+    if (!window.confirm(`Are you sure you want to cancel order #${orderNumber}?`)) {
+      return;
+    }
+    setCancellingOrderId(orderId);
+    try {
+      const res = await StorageService.cancelOrder(orderId, 'Cancelled by customer from account portal');
+      setCancellingOrderId(null);
+      if (res.success) {
+        showToast(`Order #${orderNumber} has been cancelled.`, 'info');
+      } else {
+        showToast(res.error || 'Failed to cancel order.', 'error');
+      }
+    } catch (err: any) {
+      setCancellingOrderId(null);
+      showToast(err.message || 'Error requesting cancellation.', 'error');
+    }
+  };
 
   const handleSaveAddress = (e: React.FormEvent) => {
     e.preventDefault();
@@ -317,13 +337,24 @@ export const CustomerAccountPage: React.FC = () => {
                           {order.shippingDetails?.courierName || 'Standard Express'} ·{' '}
                           {order.shippingDetails?.trackingId || 'Preparing'}
                         </span>
-                        <button
-                          onClick={() => openTracking(order.orderNumber)}
-                          className="text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 underline underline-offset-2"
-                        >
-                          <span>Track Shipment</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          {(order.status === 'Pending' || order.status === 'Confirmed') && (
+                            <button
+                              onClick={() => handleCancelOrder(order.id, order.orderNumber)}
+                              disabled={cancellingOrderId === order.id}
+                              className="text-rose-700 hover:text-rose-900 font-semibold text-[11px] underline underline-offset-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openTracking(order.orderNumber)}
+                            className="text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 underline underline-offset-2 cursor-pointer"
+                          >
+                            <span>Track Shipment</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))

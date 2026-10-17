@@ -248,21 +248,25 @@ export const OrderManager: React.FC = () => {
     setInternalNotes(order.notes || '');
   };
 
-  const handleUpdateOrder = (e: React.FormEvent) => {
+  const handleUpdateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
 
-    StorageService.updateOrderStatus(
-      selectedOrder.id,
-      status,
-      paymentStatus,
-      { courierName, trackingId, trackingUrl, estimatedDelivery },
-      { utrNumber: utrNumber.trim(), notes: internalNotes.trim() }
-    );
+    try {
+      await StorageService.updateOrderStatus(
+        selectedOrder.id,
+        status,
+        paymentStatus,
+        { courierName, trackingId, trackingUrl, estimatedDelivery },
+        { utrNumber: utrNumber.trim(), notes: internalNotes.trim() }
+      );
 
-    syncOrders();
-    setSelectedOrder(null);
-    showToast(`Order #${selectedOrder.orderNumber} updated → ${status}`, 'success');
+      syncOrders();
+      setSelectedOrder(null);
+      showToast(`Order #${selectedOrder.orderNumber} updated → ${status}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Status transition rejected by server', 'error');
+    }
   };
 
   // Tab-based counts

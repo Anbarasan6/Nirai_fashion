@@ -49,6 +49,11 @@ import {
   fetchUserWishlist,
   toggleWishlistInSupabase,
   syncGuestWishlistRpc,
+  placeOrderViaRpc,
+  updateOrderStatusViaRpc,
+  cancelOrderViaRpc,
+  quoteCartViaRpc,
+  trackOrderViaRpc,
   supabase,
 } from './supabase';
 
@@ -402,45 +407,40 @@ export const StorageService = {
   },
 
   async createOrder(
-    orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'>
+    orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'> & { idempotencyKey?: string }
   ): Promise<Order> {
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const catalogProducts = memoryCache.products;
+    const payload = {
+      customer_name: orderData.customerName,
+      customer_email: orderData.customerEmail,
+      customer_phone: orderData.customerPhone,
+      shipping_address: orderData.shippingAddress,
+      items: orderData.items.map((i) => ({
+        productId: i.productId,
+        variantId: i.variantId || null,
+        quantity: i.quantity,
+      })),
+      coupon_code: orderData.couponCode,
+      payment_method: orderData.paymentMethod,
+      utr_number: orderData.utrNumber,
+      payment_proof_url: orderData.paymentProofUrl,
+      idempotency_key: orderData.idempotencyKey || `idem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    };
 
-    // Verify catalog prices for each ordered item to prevent client-side tampering
-    const validatedItems = orderData.items.map((item) => {
-      const product = catalogProducts.find((p) => p.id === item.productId);
-      const verifiedUnitPrice = product ? (product.finalPrice || product.basePrice) : item.unitPrice;
-      return {
-        ...item,
-        unitPrice: verifiedUnitPrice,
-        totalPrice: verifiedUnitPrice * item.quantity,
-      };
-    });
-
-    const validatedSubtotal = validatedItems.reduce((acc, it) => acc + it.totalPrice, 0);
-    const calculatedGrandTotal = Math.max(
-      0,
-      validatedSubtotal + (orderData.shippingFee || 0) - (orderData.discountAmount || 0)
-    );
+    const rpcRes = await placeOrderViaRpc(payload);
+    if (!rpcRes.success || !rpcRes.data) {
+      throw new Error(rpcRes.error || 'Failed to place order.');
+    }
 
     const newOrder: Order = {
       ...orderData,
-      items: validatedItems,
-      subtotal: validatedSubtotal,
-      grandTotal: calculatedGrandTotal,
-      id: `ord-${Date.now()}`,
-      orderNumber: `NIRAI-2026-${randomSuffix}`,
+      id: rpcRes.data.orderId,
+      orderNumber: rpcRes.data.orderNumber,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    const res = await saveOrderToSupabase(newOrder);
-    if (!res.success) {
-      throw new Error(res.error || 'Failed to place order in database.');
-    }
-
-    memoryCache.orders.unshift(newOrder);
+    // Prepend to local memory cache so storefront immediately reflects order without full re-fetch
+    memoryCache.orders = [newOrder, ...memoryCache.orders.filter((o) => o.id !== newOrder.id)];
     notifyListeners();
     return newOrder;
   },
@@ -452,24 +452,49 @@ export const StorageService = {
     shippingDetails?: Order['shippingDetails'],
     extraFields?: { utrNumber?: string; notes?: string }
   ): Promise<boolean> {
-    const order = memoryCache.orders.find((o) => o.id === orderId);
-    if (!order) return false;
+    const rpcRes = await updateOrderStatusViaRpc(
+      orderId,
+      status,
+      paymentStatus,
+      shippingDetails,
+      extraFields?.notes
+    );
 
-    order.status = status;
-    if (paymentStatus) order.paymentStatus = paymentStatus;
-    if (shippingDetails) {
-      order.shippingDetails = { ...order.shippingDetails, ...shippingDetails };
+    if (!rpcRes.success) {
+      console.error('Server status transition rejected:', rpcRes.error);
+      throw new Error(rpcRes.error || 'Server rejected order status transition.');
     }
-    if (extraFields?.utrNumber !== undefined) order.utrNumber = extraFields.utrNumber;
-    if (extraFields?.notes !== undefined) order.notes = extraFields.notes;
-    order.updatedAt = new Date().toISOString();
 
-    const ok = await updateOrderStatusInSupabase(orderId, status);
-    if (ok) {
-      await saveOrderToSupabase(order);
+    const order = memoryCache.orders.find((o) => o.id === orderId);
+    if (order) {
+      order.status = status;
+      if (paymentStatus) order.paymentStatus = paymentStatus;
+      if (shippingDetails) {
+        order.shippingDetails = { ...order.shippingDetails, ...shippingDetails };
+      }
+      if (extraFields?.utrNumber !== undefined) order.utrNumber = extraFields.utrNumber;
+      if (extraFields?.notes !== undefined) order.notes = extraFields.notes;
+      order.updatedAt = new Date().toISOString();
+    }
+
+    notifyListeners();
+    return true;
+  },
+
+  async cancelOrder(orderId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    const rpcRes = await cancelOrderViaRpc(orderId, reason);
+    if (!rpcRes.success) {
+      return { success: false, error: rpcRes.error };
+    }
+
+    const order = memoryCache.orders.find((o) => o.id === orderId);
+    if (order) {
+      order.status = 'Cancelled';
+      order.updatedAt = new Date().toISOString();
       notifyListeners();
     }
-    return ok;
+
+    return { success: true };
   },
 
   // ============================================================================

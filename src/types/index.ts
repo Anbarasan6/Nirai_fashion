@@ -241,6 +241,76 @@ export interface CartItem {
   selectedVariant: ProductVariant;
 }
 
+export interface CartQuoteItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  sku: string;
+  variantId?: string | null;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+  inStock: boolean;
+  availableStock: number;
+}
+
+export interface CartQuote {
+  success: boolean;
+  error?: string;
+  items: CartQuoteItem[];
+  subtotal: number;
+  shippingFee: number;
+  freeShippingApplied: boolean;
+  freeShippingThreshold: number;
+  discount: number;
+  coupon?: {
+    code: string;
+    isValid: boolean;
+    discount: number;
+    error?: string | null;
+  };
+  taxAmount: number;
+  taxIncluded: boolean;
+  grandTotal: number;
+}
+
+export interface PlaceOrderPayload {
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  shipping_address: Address;
+  items: Array<{
+    productId: string;
+    variantId?: string | null;
+    quantity: number;
+  }>;
+  coupon_code?: string;
+  payment_method?: PaymentMethod;
+  utr_number?: string;
+  payment_proof_url?: string;
+  idempotency_key?: string;
+}
+
+export interface TrackingResult {
+  success: boolean;
+  order_number: string;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  payment_method: PaymentMethod;
+  shipping_details?: ShippingDetails;
+  items: Array<{
+    productName: string;
+    productImage?: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+  item_count: number;
+  grand_total: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
