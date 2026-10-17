@@ -259,7 +259,16 @@ export const StorageService = {
 
   // ORDERS
   getOrders(): Order[] {
-    return getItem<Order[]>(KEYS.ORDERS, initialOrders);
+    const orders = getItem<Order[]>(KEYS.ORDERS, initialOrders);
+    const missing = initialOrders.filter(
+      (init) => !orders.some((o) => o.id === init.id || o.orderNumber === init.orderNumber)
+    );
+    if (missing.length > 0) {
+      const merged = [...missing, ...orders];
+      setItem(KEYS.ORDERS, merged);
+      return merged;
+    }
+    return orders;
   },
 
   getOrderById(id: string): Order | undefined {

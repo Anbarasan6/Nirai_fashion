@@ -157,14 +157,14 @@ export const CheckoutPage: React.FC = () => {
         shippingFee: finalShippingFee,
         freeShippingApplied: finalShippingFee === 0,
         grandTotal: finalPayable,
-        status: 'Confirmed',
+        status: 'Pending',
         paymentStatus: paymentMethod === 'ONLINE_UPI' ? 'PENDING_VERIFICATION' : 'Paid',
         paymentMethod,
         utrNumber: utrNumber.trim() || undefined,
         shippingDetails: {
-          courierName: 'BlueDart Express',
-          trackingId: `NIRAI${Math.floor(10000000 + Math.random() * 90000000)}IN`,
-          trackingUrl: 'https://www.bluedart.com',
+          courierName: '',
+          trackingId: '',
+          trackingUrl: '',
           estimatedDelivery: deliveryType === 'express' ? 'Within 48 hours' : 'Within 3-5 days',
         },
       });

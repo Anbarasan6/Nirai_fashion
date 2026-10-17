@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Language,
   User,
@@ -88,6 +89,7 @@ interface ShopContextType {
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const navigate = useNavigate();
   const [language, setLanguage] = useState<Language>('en');
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const users = StorageService.getUsers();
@@ -95,10 +97,35 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [viewMode, setViewMode] = useState<'storefront' | 'admin'>('storefront');
   const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers'>('dashboard');
-  const [activeTab, setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
+  const [activeTab, _setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
   const [selectedProductSlug, setSelectedProductSlug] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
+
+  const setActiveTab = (tab: 'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint') => {
+    _setActiveTab(tab);
+    switch (tab) {
+      case 'home':
+        navigate('/');
+        break;
+      case 'catalog':
+        navigate('/catalog');
+        break;
+      case 'cart':
+        navigate('/cart');
+        break;
+      case 'checkout':
+        navigate('/checkout');
+        break;
+      case 'orders':
+      case 'tracking':
+        navigate('/tracking');
+        break;
+      case 'account':
+        navigate('/account');
+        break;
+    }
+  };
 
   // Auth modal state
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -169,13 +196,19 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Navigation helpers
   const openProduct = (slug: string) => {
     setSelectedProductSlug(slug);
-    setActiveTab('pdp');
+    _setActiveTab('pdp');
+    navigate(`/product/${slug}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const openTracking = (orderId?: string) => {
-    if (orderId) setTrackingOrderId(orderId);
-    setActiveTab('tracking');
+    if (orderId) {
+      setTrackingOrderId(orderId);
+      navigate(`/tracking/${orderId}`);
+    } else {
+      navigate('/tracking');
+    }
+    _setActiveTab('tracking');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

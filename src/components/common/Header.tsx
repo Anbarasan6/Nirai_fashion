@@ -41,6 +41,7 @@ export const Header: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   const handleNavClick = (path: string, categoryId?: string) => {
     if (categoryId !== undefined) {
@@ -93,36 +94,50 @@ export const Header: React.FC = () => {
               setMobileMenuOpen(false);
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className="flex items-center gap-2 group transition-opacity"
+            className="flex items-center gap-2.5 group transition-opacity"
             title="Nirai Handlooms Home"
           >
             {/* Desktop Brand Logo */}
-            {storeSettings.logo?.desktopLogoUrl ? (
+            {storeSettings.logo?.desktopLogoUrl && !logoError ? (
               <img
                 src={storeSettings.logo.desktopLogoUrl}
                 alt={storeSettings.logo.altText || 'Nirai Handloom Silks'}
+                onError={() => setLogoError(true)}
                 className="hidden sm:block h-10 w-auto max-w-[200px] object-contain transition-transform group-hover:scale-102"
               />
-            ) : null}
+            ) : (
+              <div className="hidden sm:flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-[#3D1418] text-[#F5EADB] flex items-center justify-center font-serif font-black text-base border border-amber-500/30 shadow-xs group-hover:scale-105 transition-transform">
+                  ந
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-serif font-black tracking-[0.2em] text-[#2D1619] group-hover:text-[#5A1D24] text-xl leading-none transition-colors">
+                    NIRAI
+                  </span>
+                  <span className="text-[8px] uppercase tracking-[0.28em] text-[#8C2D38] font-bold mt-0.5">
+                    HANDLOOMS
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Mobile Brand Logo */}
-            {storeSettings.logo?.mobileLogoUrl ? (
+            {storeSettings.logo?.mobileLogoUrl && !logoError ? (
               <img
                 src={storeSettings.logo.mobileLogoUrl}
                 alt={storeSettings.logo.altText || 'Nirai'}
-                className="sm:hidden h-9 w-auto max-w-[120px] object-contain"
+                onError={() => setLogoError(true)}
+                className="sm:hidden h-8 w-auto max-w-[120px] object-contain"
               />
-            ) : null}
-
-            {/* Elegant Wordmark Fallback */}
-            {(!storeSettings.logo?.desktopLogoUrl || !storeSettings.logo?.mobileLogoUrl) && (
-              <span
-                className={`font-serif font-bold tracking-widest text-[#2D1619] hover:text-[#5A1D24] transition-colors ${
-                  storeSettings.logo?.desktopLogoUrl ? 'sm:hidden' : ''
-                } ${storeSettings.logo?.mobileLogoUrl ? 'hidden sm:inline-block' : ''} text-2xl sm:text-3xl`}
-              >
-                NIRAI
-              </span>
+            ) : (
+              <div className="sm:hidden flex items-center gap-1.5">
+                <div className="w-7 h-7 rounded-full bg-[#3D1418] text-[#F5EADB] flex items-center justify-center font-serif font-black text-sm border border-amber-500/30">
+                  ந
+                </div>
+                <span className="font-serif font-black tracking-[0.18em] text-[#2D1619] text-lg">
+                  NIRAI
+                </span>
+              </div>
             )}
           </Link>
         </div>
@@ -235,7 +250,7 @@ export const Header: React.FC = () => {
             className="relative p-2 text-slate-700 hover:text-rose-700 transition-colors"
             title="Wishlist"
           >
-            <Heart className="w-4 h-4" />
+            <Heart className="w-5 h-5 text-slate-700" />
             {wishlist.length > 0 && (
               <span className="absolute top-1 right-1 w-4 h-4 bg-rose-700 text-white rounded-full text-[10px] font-bold flex items-center justify-center">
                 {wishlist.length}
@@ -243,72 +258,71 @@ export const Header: React.FC = () => {
             )}
           </Link>
 
-          {/* Cart Icon */}
-          <button
-            onClick={() => setIsCartOpen(true)}
-            className="relative p-2 text-slate-700 hover:text-amber-900 transition-colors cursor-pointer"
-            title="Shopping Bag"
-          >
-            <ShoppingBag className="w-4 h-4" />
-            {cartItemCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-[#2D1619] text-amber-100 rounded-full text-[10px] font-bold flex items-center justify-center">
-                {cartItemCount}
-              </span>
-            )}
-          </button>
-
-          {/* User Account / Admin Console Toggle */}
+          {/* User Account / Profile Dropdown */}
           <div className="relative">
             {currentUser ? (
               <div className="relative">
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 hover:text-amber-900 bg-[#F2EDE2] px-2.5 py-1.5 rounded-lg cursor-pointer"
+                  className="flex items-center gap-2 text-xs font-semibold text-slate-800 hover:text-amber-900 bg-white border border-stone-200/90 hover:border-amber-900/30 px-2.5 py-1.5 rounded-full cursor-pointer shadow-2xs transition-all"
                 >
-                  <UserIcon className="w-3.5 h-3.5 text-amber-900" />
-                  <span className="hidden sm:inline max-w-[100px] truncate">
+                  <div className="w-6 h-6 rounded-full bg-[#5A1D24] text-white flex items-center justify-center text-xs font-bold uppercase shadow-2xs">
+                    {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+                  </div>
+                  <span className="hidden sm:inline max-w-[100px] truncate text-xs font-medium text-slate-800">
                     {currentUser.name}
                   </span>
-                  <ChevronDown className="w-3 h-3 text-stone-500" />
+                  <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
                 </button>
 
                 {userDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-stone-200 py-1 z-50 text-xs">
-                    <div className="px-3 py-2 border-b border-stone-100">
-                      <p className="font-bold text-slate-900 truncate">{currentUser.name}</p>
-                      <p className="text-[11px] text-stone-500 truncate">{currentUser.email}</p>
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-stone-200/90 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-4 py-2.5 border-b border-stone-100">
+                      <p className="font-bold text-slate-900 text-sm leading-tight truncate">{currentUser.name}</p>
+                      <p className="text-xs text-stone-400 truncate mt-0.5">{currentUser.email}</p>
                     </div>
 
                     <Link
                       to="/account"
                       onClick={() => setUserDropdownOpen(false)}
-                      className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-center gap-2 text-slate-700 font-medium"
+                      className="w-full text-left px-4 py-2.5 hover:bg-stone-50 flex items-center gap-2.5 text-slate-700 font-medium text-xs transition-colors"
                     >
-                      <Package className="w-3.5 h-3.5 text-amber-900" />
-                      <span>My Orders & Profile</span>
+                      <UserIcon className="w-4 h-4 text-amber-900" />
+                      <span>My Account & Orders</span>
+                    </Link>
+
+                    <Link
+                      to="/tracking"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-stone-50 flex items-center gap-2.5 text-slate-700 font-medium text-xs transition-colors"
+                    >
+                      <Package className="w-4 h-4 text-amber-900" />
+                      <span>Track Order</span>
                     </Link>
 
                     {/* Switch to Admin Mode */}
-                    <button
-                      onClick={() => {
-                        setUserDropdownOpen(false);
-                        setViewMode('admin');
-                        navigate('/admin/dashboard');
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-center gap-2 text-amber-900 font-bold"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-amber-800" />
-                      <span>Admin Management Suite</span>
-                    </button>
+                    {(currentUser.role === 'admin' || currentUser.role === 'super_admin' || currentUser.role === 'staff') && (
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          setViewMode('admin');
+                          navigate('/admin/dashboard');
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-stone-50 flex items-center gap-2.5 text-amber-900 font-bold text-xs transition-colors border-t border-stone-100"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-amber-800" />
+                        <span>Admin Management Suite</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
                         setUserDropdownOpen(false);
                         logout();
                       }}
-                      className="w-full text-left px-3 py-2 hover:bg-rose-50 flex items-center gap-2 text-rose-700 font-medium border-t border-stone-100"
+                      className="w-full text-left px-4 py-2.5 hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-medium text-xs border-t border-stone-100 transition-colors"
                     >
-                      <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                      <LogOut className="w-4 h-4 text-rose-600" />
                       <span>Sign Out</span>
                     </button>
                   </div>
@@ -317,12 +331,25 @@ export const Header: React.FC = () => {
             ) : (
               <button
                 onClick={() => openAuthModal('login')}
-                className="px-3 py-1.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 rounded-full text-xs font-semibold transition-colors cursor-pointer shadow-xs"
               >
                 Sign In
               </button>
             )}
           </div>
+
+          {/* Cart Pill Button matching screenshot */}
+          <button
+            onClick={() => setIsCartOpen(true)}
+            className="flex items-center gap-2 bg-[#2D1619] hover:bg-[#431B21] text-white px-3.5 py-1.5 rounded-full text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Shopping Cart"
+          >
+            <ShoppingBag className="w-4 h-4 text-amber-300" />
+            <span className="hidden sm:inline">Cart</span>
+            <span className="w-5 h-5 rounded-full bg-[#E5A83B] text-[#2D1619] text-xs font-extrabold flex items-center justify-center">
+              {cartItemCount}
+            </span>
+          </button>
         </div>
       </div>
 
