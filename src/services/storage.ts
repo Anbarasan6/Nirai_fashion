@@ -296,7 +296,8 @@ export const StorageService = {
     orderId: string,
     status: OrderStatus,
     paymentStatus?: PaymentStatus,
-    shippingDetails?: Order['shippingDetails']
+    shippingDetails?: Order['shippingDetails'],
+    extraFields?: { utrNumber?: string; notes?: string }
   ): void {
     const list = this.getOrders();
     const idx = list.findIndex((o) => o.id === orderId);
@@ -310,6 +311,12 @@ export const StorageService = {
           ...list[idx].shippingDetails,
           ...shippingDetails,
         };
+      }
+      if (extraFields?.utrNumber !== undefined) {
+        list[idx].utrNumber = extraFields.utrNumber;
+      }
+      if (extraFields?.notes !== undefined) {
+        list[idx].notes = extraFields.notes;
       }
       list[idx].updatedAt = new Date().toISOString();
 
@@ -342,6 +349,7 @@ export const StorageService = {
       saveOrderToSupabase(list[idx]).catch(() => {});
     }
   },
+
 
   // INVENTORY & STOCK MOVEMENTS
   getStockMovements(): StockMovement[] {
