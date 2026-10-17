@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
-import { StorageService } from '../../services/storage';
+import { supabase } from '../../services/supabase';
 import { User } from '../../types';
 import {
   LayoutDashboard,
@@ -24,15 +24,17 @@ import {
   LogOut,
   Sparkles,
   Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 
 export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const { adminTab, setAdminTab, setViewMode, currentUser, setCurrentUser, showToast } = useShop();
 
-  const [adminEmail, setAdminEmail] = useState('admin@nirai.in');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if current user has admin privileges
   const isAuthorized =
@@ -56,40 +58,56 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     { id: 'content', label: 'Shipping, Banners & Settings', icon: Megaphone },
   ];
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    const users = StorageService.getUsers();
-    const found = users.find(
-      (u) =>
-        u.email.toLowerCase() === adminEmail.trim().toLowerCase() &&
-        (u.role === 'super_admin' || u.role === 'admin' || u.role === 'staff')
-    );
 
-    if (!found) {
-      setAuthError('Invalid credentials or unauthorized administrative role.');
+    if (!adminEmail.trim() || !adminPassword.trim()) {
+      setAuthError('Please enter both administrator email and password.');
       return;
     }
 
-    if (!found.isActive) {
-      setAuthError('This administrator account has been disabled.');
-      return;
-    }
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: adminEmail.trim().toLowerCase(),
+        password: adminPassword.trim(),
+      });
 
-    if (!adminPassword.trim()) {
-      setAuthError('Please enter your administrator passkey.');
-      return;
-    }
+      if (error) {
+        setAuthError(error.message);
+        showToast(error.message, 'error');
+        return;
+      }
 
-    // Secure passkey verification
-    const validPasskeys = [found.password, 'Nirai@2026', 'admin123'].filter(Boolean);
-    if (!validPasskeys.includes(adminPassword.trim())) {
-      setAuthError('Invalid administrator passkey. Access denied.');
-      return;
-    }
+      // Query profile role to verify administrative status
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, is_active')
+        .eq('id', data.user.id)
+        .single();
 
-    setCurrentUser(found);
-    showToast(`Authenticated as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
+      if (!profile || !['staff', 'admin', 'super_admin'].includes(profile.role)) {
+        await supabase.auth.signOut();
+        setAuthError('Access Denied: Your account does not have staff or administrator privileges.');
+        showToast('Access denied: Administrative privileges required.', 'error');
+        return;
+      }
+
+      if (!profile.is_active) {
+        await supabase.auth.signOut();
+        setAuthError('This administrator account has been disabled.');
+        showToast('Account disabled.', 'error');
+        return;
+      }
+
+      showToast(`Welcome! Authenticated with ${profile.role} privileges.`, 'success');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Authentication failed.');
+      showToast(err?.message || 'Authentication failed.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // If not authorized, render the Admin Authentication Gateway
@@ -156,10 +174,20 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+              disabled={isSubmitting}
+              className="w-full py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <Lock className="w-4 h-4" />
-              <span>Authenticate into Console</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Authenticate into Console</span>
+                </>
+              )}
             </button>
           </form>
 

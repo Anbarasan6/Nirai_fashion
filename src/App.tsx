@@ -18,12 +18,14 @@ import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderTrackingPage } from './pages/OrderTrackingPage';
 import { CustomerAccountPage } from './pages/CustomerAccountPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AdminPages } from './pages/admin/AdminPages';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { RequireAuth, RequireRole } from './components/common/RouteGuards';
 
 import { WhatsAppButton } from './components/common/WhatsAppButton';
 
@@ -44,7 +46,15 @@ const AppLayout: React.FC = () => {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/tracking" element={<OrderTrackingPage />} />
           <Route path="/tracking/:orderId" element={<OrderTrackingPage />} />
-          <Route path="/account" element={<CustomerAccountPage />} />
+          <Route
+            path="/account"
+            element={
+              <RequireAuth>
+                <CustomerAccountPage />
+              </RequireAuth>
+            }
+          />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/policies" element={<PoliciesPage defaultTab="about" />} />
@@ -56,8 +66,22 @@ const AppLayout: React.FC = () => {
           <Route path="/terms" element={<PoliciesPage defaultTab="terms" />} />
           <Route path="/terms-conditions" element={<PoliciesPage defaultTab="terms" />} />
           <Route path="/faq" element={<PoliciesPage defaultTab="faq" />} />
-          <Route path="/admin" element={<AdminPages />} />
-          <Route path="/admin/:tab" element={<AdminPages />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireRole roles={['staff', 'admin', 'super_admin']}>
+                <AdminPages />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/admin/:tab"
+            element={
+              <RequireRole roles={['staff', 'admin', 'super_admin']}>
+                <AdminPages />
+              </RequireRole>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
