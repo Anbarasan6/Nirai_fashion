@@ -610,7 +610,7 @@ export const initialOrders: Order[] = [
     grandTotal: 1709,
     status: 'Processing',
     paymentStatus: 'Pending',
-    paymentMethod: 'COD',
+    paymentMethod: 'ONLINE_UPI',
     createdAt: '2026-09-25T09:15:00Z',
     updatedAt: '2026-09-25T11:00:00Z',
   },

@@ -24,6 +24,8 @@ import { PoliciesPage } from './pages/PoliciesPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { AdminPages } from './pages/admin/AdminPages';
 
+import { WhatsAppButton } from './components/common/WhatsAppButton';
+
 const AppLayout: React.FC = () => {
   const { isAuthModalOpen, setIsAuthModalOpen, authModalMode } = useShop();
 
@@ -56,6 +58,7 @@ const AppLayout: React.FC = () => {
       </main>
 
       <CartDrawer />
+      <WhatsAppButton />
       <Footer />
       <ToastContainer />
       <AuthModal

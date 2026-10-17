@@ -202,10 +202,10 @@ export const Footer: React.FC = () => {
                 </button>
               </li>
               <li>
-                <span className="text-stone-400">Direct UPI Verification Engine</span>
+                <span className="text-stone-400">Secure Direct UPI Payment</span>
               </li>
               <li>
-                <span className="text-stone-400">Cloudinary CDN & Supabase Sync</span>
+                <span className="text-stone-400">Cloudinary CDN Storage</span>
               </li>
             </ul>
           </div>
@@ -213,7 +213,7 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-[11px] text-stone-400 gap-3">
-          <p>© 2026 NIRAI Handlooms & Apparel Private Limited. All rights reserved.</p>
+          <p>© 2026 NIRAI Handlooms. All rights reserved.</p>
           <p className="flex items-center gap-3">
             <span>Direct Master Weaves</span>
             <span>·</span>

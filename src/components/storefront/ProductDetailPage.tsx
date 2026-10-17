@@ -36,11 +36,32 @@ export const ProductDetailPage: React.FC = () => {
   const [quantity, setQuantity] = useState(1);
   const [activeTabSection, setActiveTabSection] = useState<'desc' | 'specs' | 'reviews'>('desc');
 
-  // Review Form State
   const [reviewerName, setReviewerName] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+
+  // Pincode delivery checker state
+  const [pincodeInput, setPincodeInput] = useState('');
+  const [pincodeStatus, setPincodeStatus] = useState('');
+
+  const handleCheckPincode = () => {
+    if (pincodeInput.length !== 6) {
+      setPincodeStatus('✗ Please enter a valid 6-digit pincode');
+      return;
+    }
+    // Simple Tamil Nadu pincode range check
+    const tnPincodes = ['600','601','602','603','604','605','606','607','608','609','610',
+      '611','612','613','614','615','616','617','618','619','620','621','622','623','624',
+      '625','626','627','628','629','630','631','632','633','634','635','636','637','638',
+      '639','640','641','642','643','644','645','646'];
+    const prefix3 = pincodeInput.substring(0, 3);
+    if (tnPincodes.includes(prefix3)) {
+      setPincodeStatus(`✓ Delivery available! Standard: 3-5 days · Express: 24-48 hrs`);
+    } else {
+      setPincodeStatus(`✓ Delivery available across India. Standard: 5-7 days`);
+    }
+  };
 
   if (!product) {
     return (
@@ -344,6 +365,35 @@ export const ProductDetailPage: React.FC = () => {
               </button>
             </div>
 
+            {/* Pincode Delivery Checker */}
+            <div className="p-4 bg-white rounded-xl border border-[#E5DFD3] space-y-2 text-xs">
+              <span className="font-serif font-bold text-slate-900 block">
+                Check Delivery & Speed at Your Pincode
+              </span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="Enter 6-digit Pincode e.g. 600090"
+                  value={pincodeInput}
+                  onChange={(e) => setPincodeInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="flex-1 p-2 border border-stone-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-amber-800"
+                />
+                <button
+                  type="button"
+                  onClick={handleCheckPincode}
+                  className="px-4 py-2 bg-[#2D1619] text-amber-100 text-xs font-semibold rounded-lg hover:bg-[#431B21] cursor-pointer"
+                >
+                  Check
+                </button>
+              </div>
+              {pincodeStatus && (
+                <p className={`text-[11px] font-medium pt-1 ${pincodeStatus.startsWith('✓') ? 'text-emerald-800 font-bold' : 'text-rose-700'}`}>
+                  {pincodeStatus}
+                </p>
+              )}
+            </div>
+
             {/* Trust Assurances */}
             <div className="pt-4 border-t border-[#ECE6D9] grid grid-cols-3 gap-2 text-center text-[11px] text-stone-600">
               <div className="p-2 bg-white rounded-lg border border-[#EDE8DE]">
@@ -362,6 +412,40 @@ export const ProductDetailPage: React.FC = () => {
                 <span>Hassle-free</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Sticky Mobile Add to Cart Bar */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-stone-200 p-3 flex items-center justify-between gap-3 shadow-lg">
+          <div>
+            <span className="font-serif font-bold text-slate-950 text-base tabular-nums block">
+              ₹{product.finalPrice.toLocaleString()}
+            </span>
+            <span className="text-[10px] text-stone-500 block truncate max-w-[140px]">
+              {selectedVariant?.size || selectedVariant?.name}
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={isOutOfStock}
+              onClick={() => addToCart(product, selectedVariant, quantity)}
+              className="py-2.5 px-3 bg-[#2D1619] text-amber-100 font-semibold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Add</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isOutOfStock}
+              onClick={handleBuyNow}
+              className="py-2.5 px-4 bg-amber-600 text-slate-950 font-bold text-xs rounded-lg flex items-center gap-1 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Buy Now</span>
+            </button>
           </div>
         </div>
 

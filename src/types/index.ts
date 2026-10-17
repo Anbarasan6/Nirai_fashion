@@ -116,7 +116,7 @@ export type OrderStatus =
 
 export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'PENDING_VERIFICATION';
 
-export type PaymentMethod = 'COD' | 'ONLINE_UPI' | 'ONLINE_CARD' | 'BANK_TRANSFER';
+export type PaymentMethod = 'ONLINE_UPI' | 'ONLINE_CARD' | 'BANK_TRANSFER';
 
 export interface BankDetails {
   bankName: string;

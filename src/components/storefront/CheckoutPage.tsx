@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { PaymentMethod, Address } from '../../types';
@@ -10,9 +10,28 @@ import {
   ArrowLeft,
   Truck,
   CreditCard,
+  Smartphone,
   Banknote,
+  QrCode,
+  Copy,
+  ExternalLink,
+  AlertCircle,
   Sparkles,
 } from 'lucide-react';
+
+// UPI deep-link builders
+function buildGPayLink(upiId: string, amount: number, name: string) {
+  return `tez://upi/pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
+}
+function buildPhonePeLink(upiId: string, amount: number, name: string) {
+  return `phonepe://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
+}
+function buildPaytmLink(upiId: string, amount: number, name: string) {
+  return `paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
+}
+function buildGenericUpiLink(upiId: string, amount: number, name: string) {
+  return `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent('Nirai Handlooms Order')}`;
+}
 
 export const CheckoutPage: React.FC = () => {
   const {
@@ -29,21 +48,28 @@ export const CheckoutPage: React.FC = () => {
     openTracking,
     currentUser,
     showToast,
+    storeSettings,
   } = useShop();
 
-  const [fullName, setFullName] = useState(currentUser?.name || 'Priya Sundaram');
-  const [phone, setPhone] = useState(currentUser?.phone || '+91 98401 22334');
-  const [email, setEmail] = useState(currentUser?.email || 'priya@example.com');
-  const [street, setStreet] = useState('Flat 4B, Shanthi Nivas, 12th Cross St, Besant Nagar');
-  const [landmark, setLandmark] = useState('Near Murugan Temple');
-  const [city, setCity] = useState('Chennai');
-  const [state, setState] = useState('Tamil Nadu');
-  const [pincode, setPincode] = useState('600090');
+  const [fullName, setFullName] = useState(currentUser?.name || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [street, setStreet] = useState('');
+  const [landmark, setLandmark] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [pincode, setPincode] = useState('');
 
   const [deliveryType, setDeliveryType] = useState<'standard' | 'express'>('standard');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE_UPI');
+  const [utrNumber, setUtrNumber] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderCompleteOrder, setOrderCompleteOrder] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+
+  const upi = storeSettings?.upiDetails;
+  const bank = storeSettings?.bankDetails;
 
   if (cart.length === 0 && !orderCompleteOrder) {
     return (
@@ -68,6 +94,15 @@ export const CheckoutPage: React.FC = () => {
   const finalShippingFee = deliveryType === 'express' ? 199 : shippingFee;
   const finalPayable = Math.max(0, cartSubtotal - couponDiscount + finalShippingFee);
 
+  const copyUpiId = () => {
+    if (upi?.upiId) {
+      navigator.clipboard.writeText(upi.upiId).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName || !phone || !street || !city || !pincode) {
@@ -75,9 +110,13 @@ export const CheckoutPage: React.FC = () => {
       return;
     }
 
+    if (paymentMethod === 'ONLINE_UPI' && !utrNumber.trim()) {
+      showToast('Please enter your UPI Transaction / UTR Reference number after payment', 'error');
+      return;
+    }
+
     setIsProcessing(true);
 
-    // Simulate order placement & payment verification
     setTimeout(() => {
       const shippingAddress: Address = {
         id: `addr-${Date.now()}`,
@@ -119,20 +158,21 @@ export const CheckoutPage: React.FC = () => {
         freeShippingApplied: finalShippingFee === 0,
         grandTotal: finalPayable,
         status: 'Confirmed',
-        paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Paid',
+        paymentStatus: paymentMethod === 'ONLINE_UPI' ? 'PENDING_VERIFICATION' : 'Paid',
         paymentMethod,
+        utrNumber: utrNumber.trim() || undefined,
         shippingDetails: {
           courierName: 'BlueDart Express',
           trackingId: `NIRAI${Math.floor(10000000 + Math.random() * 90000000)}IN`,
           trackingUrl: 'https://www.bluedart.com',
-          estimatedDelivery: deliveryType === 'express' ? 'Within 48 hours' : 'Within 3-4 days',
+          estimatedDelivery: deliveryType === 'express' ? 'Within 48 hours' : 'Within 3-5 days',
         },
       });
 
       setIsProcessing(false);
       setOrderCompleteOrder(newOrder);
       clearCart();
-      showToast(`Order #${newOrder.orderNumber} placed successfully!`, 'success');
+      showToast(`Order #${newOrder.orderNumber} placed! Payment verification in progress.`, 'success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }, 1200);
   };
@@ -166,11 +206,17 @@ export const CheckoutPage: React.FC = () => {
                 <span className="font-bold text-slate-900 font-mono">{orderCompleteOrder.orderNumber}</span>
               </div>
               <div className="flex justify-between border-b border-stone-200 pb-2">
-                <span className="text-stone-500">Total Amount Paid / Payable</span>
+                <span className="text-stone-500">Amount Paid</span>
                 <span className="font-bold text-slate-900 font-serif tabular-nums">
                   ₹{orderCompleteOrder.grandTotal.toLocaleString()} ({orderCompleteOrder.paymentMethod})
                 </span>
               </div>
+              {orderCompleteOrder.utrNumber && (
+                <div className="flex justify-between border-b border-stone-200 pb-2">
+                  <span className="text-stone-500">UTR / Ref No.</span>
+                  <span className="font-semibold text-slate-900 font-mono">{orderCompleteOrder.utrNumber}</span>
+                </div>
+              )}
               <div className="flex justify-between border-b border-stone-200 pb-2">
                 <span className="text-stone-500">Assigned Courier</span>
                 <span className="font-semibold text-slate-900">
@@ -184,6 +230,19 @@ export const CheckoutPage: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Payment pending notice */}
+            {orderCompleteOrder.paymentStatus === 'PENDING_VERIFICATION' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-left text-xs">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-amber-800">
+                    Your UPI payment is pending verification. Our team will confirm within 30 minutes. 
+                    You'll receive a WhatsApp/SMS notification once verified.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
               <button
@@ -269,7 +328,6 @@ export const CheckoutPage: React.FC = () => {
                     </label>
                     <input
                       type="email"
-                      required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800"
@@ -329,9 +387,28 @@ export const CheckoutPage: React.FC = () => {
                     <input
                       type="text"
                       required
+                      maxLength={6}
                       value={pincode}
-                      onChange={(e) => setPincode(e.target.value)}
-                      className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800"
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '');
+                        setPincode(val);
+                        if (val.length === 6) {
+                          if (val.startsWith('600') || val.startsWith('601') || val.startsWith('602') || val.startsWith('603')) {
+                            setCity('Chennai'); setState('Tamil Nadu');
+                          } else if (val.startsWith('625')) {
+                            setCity('Madurai'); setState('Tamil Nadu');
+                          } else if (val.startsWith('641')) {
+                            setCity('Coimbatore'); setState('Tamil Nadu');
+                          } else if (val.startsWith('636')) {
+                            setCity('Salem'); setState('Tamil Nadu');
+                          } else if (val.startsWith('631')) {
+                            setCity('Kanchipuram'); setState('Tamil Nadu');
+                          } else if (val.startsWith('627')) {
+                            setCity('Tirunelveli'); setState('Tamil Nadu');
+                          }
+                        }
+                      }}
+                      className="w-full p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono"
                     />
                   </div>
                 </div>
@@ -420,7 +497,7 @@ export const CheckoutPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-3 text-xs">
-                  {/* Online Payment (UPI / Cards) */}
+                  {/* UPI Payment Option */}
                   <label
                     className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
                       paymentMethod === 'ONLINE_UPI'
@@ -437,24 +514,24 @@ export const CheckoutPage: React.FC = () => {
                         className="text-amber-900 focus:ring-amber-900"
                       />
                       <div className="flex items-center gap-2.5">
-                        <CreditCard className="w-4 h-4 text-amber-800" />
+                        <Smartphone className="w-4 h-4 text-amber-800" />
                         <div>
                           <span className="font-bold text-slate-900 block">
-                            Instant UPI / Cards / Netbanking
+                            UPI / QR Code Payment
                           </span>
-                          <span className="text-stone-500">Google Pay, PhonePe, Paytm & Major Credit/Debit Cards</span>
+                          <span className="text-stone-500">GPay, PhonePe, Paytm &amp; Any UPI App</span>
                         </div>
                       </div>
                     </div>
                     <span className="text-[10px] text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded">
-                      Instant Confirmation
+                      Recommended
                     </span>
                   </label>
 
-                  {/* Cash on Delivery */}
+                  {/* Online Card */}
                   <label
                     className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
-                      paymentMethod === 'COD'
+                      paymentMethod === 'ONLINE_CARD'
                         ? 'border-amber-900 bg-amber-50/50'
                         : 'border-stone-200 hover:border-stone-300'
                     }`}
@@ -463,33 +540,226 @@ export const CheckoutPage: React.FC = () => {
                       <input
                         type="radio"
                         name="payment"
-                        checked={paymentMethod === 'COD'}
-                        onChange={() => setPaymentMethod('COD')}
+                        checked={paymentMethod === 'ONLINE_CARD'}
+                        onChange={() => setPaymentMethod('ONLINE_CARD')}
+                        className="text-amber-900 focus:ring-amber-900"
+                      />
+                      <div className="flex items-center gap-2.5">
+                        <CreditCard className="w-4 h-4 text-amber-800" />
+                        <div>
+                          <span className="font-bold text-slate-900 block">
+                            Credit / Debit Card
+                          </span>
+                          <span className="text-stone-500">Visa, Mastercard, RuPay &amp; Netbanking</span>
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Bank Transfer */}
+                  <label
+                    className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      paymentMethod === 'BANK_TRANSFER'
+                        ? 'border-amber-900 bg-amber-50/50'
+                        : 'border-stone-200 hover:border-stone-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="payment"
+                        checked={paymentMethod === 'BANK_TRANSFER'}
+                        onChange={() => setPaymentMethod('BANK_TRANSFER')}
                         className="text-amber-900 focus:ring-amber-900"
                       />
                       <div className="flex items-center gap-2.5">
                         <Banknote className="w-4 h-4 text-amber-800" />
                         <div>
                           <span className="font-bold text-slate-900 block">
-                            Cash on Delivery (COD)
+                            Direct Bank Transfer (NEFT/IMPS)
                           </span>
-                          <span className="text-stone-500">Pay in cash or UPI when your order is delivered</span>
+                          <span className="text-stone-500">Transfer to our bank account directly</span>
                         </div>
                       </div>
                     </div>
                   </label>
                 </div>
+
+                {/* UPI Payment Panel - QR Code & App Links */}
+                {paymentMethod === 'ONLINE_UPI' && upi && (
+                  <div className="mt-4 space-y-4 border border-amber-200 rounded-xl bg-amber-50/40 p-4">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-amber-800" />
+                      <span className="text-xs font-bold text-slate-900">Pay ₹{finalPayable.toLocaleString()} via UPI</span>
+                    </div>
+
+                    {/* UPI ID with copy button */}
+                    <div className="bg-white rounded-lg border border-stone-200 p-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-stone-500 mb-0.5">UPI ID</p>
+                        <p className="text-sm font-bold text-slate-900 font-mono">{upi.upiId}</p>
+                        <p className="text-[10px] text-stone-500">{upi.merchantName}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={copyUpiId}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          copied
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-900 text-amber-100 hover:bg-amber-800'
+                        }`}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+
+                    {/* QR Code Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowQR(!showQR)}
+                      className="w-full text-xs font-semibold text-amber-900 border border-amber-300 bg-white rounded-lg py-2 hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      {showQR ? 'Hide QR Code' : 'Show QR Code to Scan'}
+                    </button>
+
+                    {showQR && (
+                      <div className="flex flex-col items-center gap-3 py-2">
+                        {/* QR Code - uses Google Charts API to generate a real QR */}
+                        <div className="bg-white p-3 rounded-xl border-2 border-amber-200 shadow-sm">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(buildGenericUpiLink(upi.upiId, finalPayable, upi.merchantName))}&bgcolor=ffffff&color=2D1619&margin=10`}
+                            alt="UPI QR Code"
+                            className="w-48 h-48 object-contain"
+                            onError={(e) => {
+                              // Fallback: show a placeholder
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs font-bold text-slate-900">Scan with any UPI App</p>
+                          <p className="text-[10px] text-stone-500 mt-0.5">{upi.qrCodeNote || 'GPay · PhonePe · Paytm · BHIM'}</p>
+                          <p className="text-sm font-bold text-amber-900 mt-1">₹{finalPayable.toLocaleString()}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pay via App Buttons */}
+                    <div>
+                      <p className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider mb-2">
+                        Or Pay directly via app
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <a
+                          href={buildGPayLink(upi.upiId, finalPayable, upi.merchantName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-1.5 p-2.5 bg-white border border-stone-200 rounded-xl hover:border-amber-300 hover:bg-amber-50/30 transition-all text-center"
+                        >
+                          <span className="text-lg">🟢</span>
+                          <span className="text-[10px] font-bold text-slate-700">Google Pay</span>
+                        </a>
+                        <a
+                          href={buildPhonePeLink(upi.upiId, finalPayable, upi.merchantName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-1.5 p-2.5 bg-white border border-stone-200 rounded-xl hover:border-amber-300 hover:bg-amber-50/30 transition-all text-center"
+                        >
+                          <span className="text-lg">🟣</span>
+                          <span className="text-[10px] font-bold text-slate-700">PhonePe</span>
+                        </a>
+                        <a
+                          href={buildPaytmLink(upi.upiId, finalPayable, upi.merchantName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex flex-col items-center gap-1.5 p-2.5 bg-white border border-stone-200 rounded-xl hover:border-amber-300 hover:bg-amber-50/30 transition-all text-center"
+                        >
+                          <span className="text-lg">🔵</span>
+                          <span className="text-[10px] font-bold text-slate-700">Paytm</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* UTR number input */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-800 mb-1.5">
+                        Enter UPI Transaction / UTR Reference Number *
+                      </label>
+                      <input
+                        type="text"
+                        value={utrNumber}
+                        onChange={(e) => setUtrNumber(e.target.value)}
+                        placeholder="e.g. 123456789012 (12-digit UTR from your UPI app)"
+                        className="w-full p-2.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono"
+                      />
+                      <p className="text-[10px] text-stone-500 mt-1">
+                        After paying, enter the Transaction ID / UTR number from your UPI app to confirm your order.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bank Transfer Details Panel */}
+                {paymentMethod === 'BANK_TRANSFER' && bank && (
+                  <div className="mt-4 border border-blue-200 rounded-xl bg-blue-50/40 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Banknote className="w-4 h-4 text-blue-700" />
+                      <span className="text-xs font-bold text-slate-900">Bank Transfer Details</span>
+                    </div>
+                    <div className="bg-white rounded-lg border border-stone-200 p-3 space-y-2 text-xs">
+                      {[
+                        { label: 'Account Name', value: bank.accountName },
+                        { label: 'Account No.', value: bank.accountNumber },
+                        { label: 'IFSC Code', value: bank.ifscCode },
+                        { label: 'Bank', value: bank.bankName },
+                        { label: 'Branch', value: bank.branch },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex justify-between">
+                          <span className="text-stone-500">{label}</span>
+                          <span className="font-semibold text-slate-900 font-mono">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-stone-800 mb-1.5">
+                        Enter NEFT/IMPS Transaction Reference *
+                      </label>
+                      <input
+                        type="text"
+                        value={utrNumber}
+                        onChange={(e) => setUtrNumber(e.target.value)}
+                        placeholder="e.g. HDFC12345678901234"
+                        className="w-full p-2.5 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Card payment note */}
+                {paymentMethod === 'ONLINE_CARD' && (
+                  <div className="mt-4 border border-stone-200 rounded-xl bg-stone-50 p-4 text-xs text-stone-600 space-y-1">
+                    <p className="font-semibold text-slate-900 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-700" />
+                      Payment Gateway Coming Soon
+                    </p>
+                    <p>
+                      Card payments will be available shortly. Please use UPI or Bank Transfer to complete your order now.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Submit Button for Mobile view */}
               <div className="lg:hidden">
                 <button
                   type="submit"
-                  disabled={isProcessing}
-                  className="w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+                  disabled={isProcessing || paymentMethod === 'ONLINE_CARD'}
+                  className="w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Lock className="w-4 h-4" />
-                  <span>{isProcessing ? t.checkout.processing : `${t.checkout.placeOrder} (₹${finalPayable.toLocaleString()})`}</span>
+                  <span>{isProcessing ? t.checkout.processing : `Confirm Order (₹${finalPayable.toLocaleString()})`}</span>
                 </button>
               </div>
             </form>
@@ -565,8 +835,8 @@ export const CheckoutPage: React.FC = () => {
               <button
                 type="submit"
                 form="checkout-form"
-                disabled={isProcessing}
-                className="hidden lg:flex w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer"
+                disabled={isProcessing || paymentMethod === 'ONLINE_CARD'}
+                className="hidden lg:flex w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Lock className="w-4 h-4 text-amber-400" />
                 <span>{isProcessing ? t.checkout.processing : t.checkout.placeOrder}</span>
