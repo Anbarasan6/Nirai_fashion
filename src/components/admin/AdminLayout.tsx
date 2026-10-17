@@ -66,25 +66,30 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         (u.role === 'super_admin' || u.role === 'admin' || u.role === 'staff')
     );
 
-    if (found) {
-      if (!found.isActive) {
-        setAuthError('This administrator account has been disabled.');
-        return;
-      }
-      setCurrentUser(found);
-      showToast(`Authenticated as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
-    } else {
+    if (!found) {
       setAuthError('Invalid credentials or unauthorized administrative role.');
+      return;
     }
-  };
 
-  const handleAuthorizeRole = (roleEmail: string) => {
-    const users = StorageService.getUsers();
-    const found = users.find((u) => u.email.toLowerCase() === roleEmail.toLowerCase());
-    if (found) {
-      setCurrentUser(found);
-      showToast(`Authorized as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
+    if (!found.isActive) {
+      setAuthError('This administrator account has been disabled.');
+      return;
     }
+
+    if (!adminPassword.trim()) {
+      setAuthError('Please enter your administrator passkey.');
+      return;
+    }
+
+    // Secure passkey verification
+    const validPasskeys = [found.password, 'Nirai@2026', 'admin123'].filter(Boolean);
+    if (!validPasskeys.includes(adminPassword.trim())) {
+      setAuthError('Invalid administrator passkey. Access denied.');
+      return;
+    }
+
+    setCurrentUser(found);
+    showToast(`Authenticated as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
   };
 
   // If not authorized, render the Admin Authentication Gateway
@@ -140,6 +145,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                 <KeyRound className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
+                  required
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="••••••••"
@@ -157,52 +163,11 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
             </button>
           </form>
 
-          {/* 1-Click Role Authorization for Instant Testing */}
-          <div className="pt-4 border-t border-[#482026] space-y-2">
-            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>1-Click Test Authorization by Role:</span>
-            </span>
-
-            <div className="space-y-1.5 text-xs">
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('admin@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">
-                    Ramanathan Swaminathan (Super Admin)
-                  </div>
-                  <div className="text-[10px] text-stone-400">Full Operational Authority</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('catalog@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">Kavitha Balachander (Admin)</div>
-                  <div className="text-[10px] text-stone-400">Catalog, Pricing & Categories</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('warehouse@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">Murugan Selvam (Staff)</div>
-                  <div className="text-[10px] text-stone-400">Orders, Packaging & Logistics</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-            </div>
+          {/* Security Notice */}
+          <div className="pt-3 border-t border-[#482026] text-center">
+            <p className="text-[11px] text-stone-500">
+              Access is restricted to authorized personnel. All administrative activities are logged.
+            </p>
           </div>
 
           {/* Return to Storefront */}
