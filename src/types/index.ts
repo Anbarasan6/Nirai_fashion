@@ -130,6 +130,40 @@ export interface UpiDetails {
   upiId: string;
   merchantName: string;
   qrCodeNote?: string;
+  qrCodeImageUrl?: string;
+}
+
+export interface FooterLinkItem {
+  id: string;
+  labelEn: string;
+  labelTa: string;
+  url: string;
+}
+
+export interface FooterColumn {
+  id: string;
+  titleEn: string;
+  titleTa: string;
+  links: FooterLinkItem[];
+}
+
+export interface SocialLinks {
+  showSocialIcons: boolean;
+  instagramUrl: string;
+  facebookUrl: string;
+  twitterUrl: string;
+  whatsappUrl: string;
+}
+
+export interface FooterConfig {
+  brandAboutEn: string;
+  brandAboutTa: string;
+  addressEn: string;
+  addressTa: string;
+  columns: FooterColumn[];
+  social: SocialLinks;
+  copyrightEn: string;
+  copyrightTa: string;
 }
 
 export interface ShippingRules {
@@ -356,4 +390,5 @@ export interface StoreSettings {
   supportPhone: string;
   supportEmail: string;
   isAnnouncementActive: boolean;
+  footerConfig?: FooterConfig;
 }

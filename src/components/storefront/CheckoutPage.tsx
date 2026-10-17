@@ -629,7 +629,11 @@ export const CheckoutPage: React.FC = () => {
                         {/* QR Code - uses Google Charts API to generate a real QR */}
                         <div className="bg-white p-3 rounded-xl border-2 border-amber-200 shadow-sm">
                           <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(buildGenericUpiLink(upi.upiId, finalPayable, upi.merchantName))}&bgcolor=ffffff&color=2D1619&margin=10`}
+                            src={
+                              upi.qrCodeImageUrl
+                                ? upi.qrCodeImageUrl
+                                : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(buildGenericUpiLink(upi.upiId, finalPayable, upi.merchantName))}&bgcolor=ffffff&color=2D1619&margin=10`
+                            }
                             alt="UPI QR Code"
                             className="w-48 h-48 object-contain"
                             onError={(e) => {
