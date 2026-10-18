@@ -57,6 +57,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     { id: 'couriers', label: 'Courier & Shipping Rates', icon: Truck },
     { id: 'coupons', label: 'Coupons & Offers', icon: Tag },
     { id: 'content', label: 'Shipping, Banners & Settings', icon: Megaphone },
+    { id: 'notifications', label: 'Notifications & Outbox', icon: Mail },
   ];
 
   const handleAdminLogin = async (e: React.FormEvent) => {

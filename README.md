@@ -149,6 +149,32 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## 🚨 Production Launch Blockers Checklist
+
+Before promoting the storefront to production and accepting real customer orders, the following **mandatory blockers** must be resolved:
+
+- [ ] **[CRITICAL] Supabase Auth Custom SMTP Configuration**:
+  - The built-in Supabase Auth email service is capped at ~3-4 emails/hour. Real user registrations, confirmations, and password resets will fail.
+  - Follow [docs/SUPABASE_SMTP_SETUP.md](docs/SUPABASE_SMTP_SETUP.md) to configure Resend Custom SMTP (`smtp.resend.com:465`).
+  - Deploy bilingual (English & Tamil) email templates for Sign Up Confirmation and Password Reset.
+- [ ] **[CRITICAL] Resend Sending Domain Verification (SPF / DKIM / DMARC)**:
+  - Without a verified sending domain, Resend will **ONLY deliver emails to the account owner's own email address**. Real customer notifications will fail with HTTP 403.
+  - Add DNS records for `nirai.in` (SPF: `v=spf1 include:resend.com ~all`, DKIM: `resend._domainkey`, DMARC: `v=DMARC1; p=none; rua=mailto:postmaster@nirai.in`).
+  - Verify that the domain badge shows **Verified** in the Resend dashboard.
+- [ ] **Configure Supabase Edge Function Secrets**:
+  - `RESEND_API_KEY`: API key for outbound transactional emails.
+  - `NOTIFY_FROM_EMAIL`: Set to verified domain email, e.g. `"Nirai Handlooms <orders@nirai.in>"`.
+  - `NOTIFY_WEBHOOK_SECRET`: Secure shared secret header for authenticating triggers.
+  - `CRON_SECRET`: Secret header for invoking automated background jobs.
+- [ ] **Automated Expiry & Reminders Background Jobs**:
+  - Verify `expire_unpaid_orders` runs every 15 minutes (`*/15 * * * *`).
+  - Verify `check_payment_reminders` enqueues 4-hour payment expiration warnings.
+- [ ] **Rotate Default Admin Passwords & Enforce RLS**:
+  - Ensure all database tables enforce Row Level Security (RLS).
+  - Verify anonymous users cannot execute privileged RPC functions.
+
+---
+
 ## Production Deployment
 
 ### Vercel / Netlify

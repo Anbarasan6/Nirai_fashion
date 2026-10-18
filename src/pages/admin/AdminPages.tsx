@@ -18,6 +18,7 @@ const SupplierManager = lazy(() => import('../../components/admin/SupplierManage
 const CourierManager = lazy(() => import('../../components/admin/CourierManager').then((m) => ({ default: m.CourierManager })));
 const CouponManager = lazy(() => import('../../components/admin/CouponManager').then((m) => ({ default: m.CouponManager })));
 const ContentManager = lazy(() => import('../../components/admin/ContentManager').then((m) => ({ default: m.ContentManager })));
+const NotificationManager = lazy(() => import('../../components/admin/NotificationManager').then((m) => ({ default: m.NotificationManager })));
 
 const AdminLoadingFallback: React.FC = () => (
   <div className="min-h-[400px] flex items-center justify-center p-12 text-center">
@@ -50,6 +51,7 @@ export const AdminPages: React.FC = () => {
       'coupons',
       'content',
       'customers',
+      'notifications',
     ] as const;
 
     if (validTabs.includes(currentTab as any)) {
@@ -74,6 +76,7 @@ export const AdminPages: React.FC = () => {
         {currentTab === 'couriers' && <CourierManager />}
         {currentTab === 'coupons' && <CouponManager />}
         {currentTab === 'content' && <ContentManager />}
+        {currentTab === 'notifications' && <NotificationManager />}
       </Suspense>
 
       <ToastContainer />
