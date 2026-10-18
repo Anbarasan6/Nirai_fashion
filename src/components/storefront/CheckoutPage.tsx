@@ -195,11 +195,22 @@ export const CheckoutPage: React.FC = () => {
     const validationResult = checkoutSchema.safeParse(formValues);
     if (!validationResult.success) {
       const errors: Partial<Record<keyof CheckoutFormValues, string>> = {};
+      let firstInvalidKey: string | null = null;
       validationResult.error.issues.forEach((issue) => {
         const key = issue.path[0] as keyof CheckoutFormValues;
-        if (!errors[key]) errors[key] = issue.message;
+        if (!errors[key]) {
+          errors[key] = issue.message;
+          if (!firstInvalidKey) firstInvalidKey = key;
+        }
       });
       setFormErrors(errors);
+      if (firstInvalidKey) {
+        const el = document.getElementById(`checkout-${firstInvalidKey}`);
+        if (el) {
+          el.focus();
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
       showToast('Please check required address fields.', 'error');
       return;
     }
@@ -408,11 +419,13 @@ export const CheckoutPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-fullName" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.fullName} *
                     </label>
                     <input
+                      id="checkout-fullName"
                       type="text"
+                      autoComplete="name"
                       value={fullName}
                       onChange={(e) => {
                         setFullName(e.target.value);
@@ -430,11 +443,14 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-phone" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.phone} (10-digit Mobile) *
                     </label>
                     <input
+                      id="checkout-phone"
                       type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       maxLength={10}
                       value={phone}
                       onChange={(e) => {
@@ -455,11 +471,14 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-email" className="block font-semibold text-stone-700 mb-1">
                       Email Address (for order receipts &amp; courier tracking) *
                     </label>
                     <input
+                      id="checkout-email"
                       type="email"
+                      inputMode="email"
+                      autoComplete="email"
                       value={email}
                       onChange={(e) => {
                         setEmail(e.target.value);
@@ -478,11 +497,13 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div className="sm:col-span-2">
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-street" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.street} *
                     </label>
                     <input
+                      id="checkout-street"
                       type="text"
+                      autoComplete="street-address"
                       value={street}
                       onChange={(e) => {
                         setStreet(e.target.value);
@@ -501,11 +522,13 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-landmark" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.landmark} (Optional)
                     </label>
                     <input
+                      id="checkout-landmark"
                       type="text"
+                      autoComplete="off"
                       value={landmark}
                       onChange={(e) => setLandmark(e.target.value)}
                       placeholder="Near Temple / Metro station"
@@ -514,11 +537,13 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-city" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.city} *
                     </label>
                     <input
+                      id="checkout-city"
                       type="text"
+                      autoComplete="address-level2"
                       value={city}
                       onChange={(e) => {
                         setCity(e.target.value);
@@ -536,11 +561,13 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-state" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.state} *
                     </label>
                     <input
+                      id="checkout-state"
                       type="text"
+                      autoComplete="address-level1"
                       value={state}
                       onChange={(e) => {
                         setState(e.target.value);
@@ -558,11 +585,14 @@ export const CheckoutPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-stone-700 mb-1">
+                    <label htmlFor="checkout-pincode" className="block font-semibold text-stone-700 mb-1">
                       {t.checkout.pincode} (6-digit PIN) *
                     </label>
                     <input
+                      id="checkout-pincode"
                       type="text"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
                       maxLength={6}
                       value={pincode}
                       onChange={(e) => {

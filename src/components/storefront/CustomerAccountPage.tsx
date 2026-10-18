@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { User, Address } from '../../types';
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 export const CustomerAccountPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentUser,
     setCurrentUser,
@@ -282,9 +283,16 @@ export const CustomerAccountPage: React.FC = () => {
                 </h3>
 
                 {myOrders.length === 0 ? (
-                  <div className="bg-white p-12 rounded-xl border border-[#E5DFD3] text-center space-y-2">
+                  <div className="bg-white p-12 rounded-xl border border-[#E5DFD3] text-center space-y-3">
                     <Package className="w-10 h-10 text-stone-300 mx-auto" />
-                    <p className="text-xs text-stone-500">You haven't placed any orders yet.</p>
+                    <p className="font-serif text-sm font-bold text-slate-800">You haven't placed any orders yet</p>
+                    <p className="text-xs text-stone-500">Discover our authentic handwoven South Indian silk sarees.</p>
+                    <button
+                      onClick={() => navigate('/catalog')}
+                      className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                      Browse Sarees
+                    </button>
                   </div>
                 ) : (
                   myOrders.map((order) => (

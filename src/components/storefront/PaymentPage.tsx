@@ -475,6 +475,7 @@ export const PaymentPage: React.FC = () => {
               </div>
 
               {!instructions.is_expired && (
+
                 <div className="text-right">
                   <span className="text-[10px] uppercase font-bold text-stone-400 block mb-0.5">Deadline</span>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-xs font-mono font-bold">
@@ -637,11 +638,10 @@ export const PaymentPage: React.FC = () => {
                         key={m.id}
                         type="button"
                         onClick={() => setSelectedMethod(m.id as any)}
-                        className={`py-2 px-2 rounded-lg border font-medium text-center transition-all cursor-pointer ${
-                          selectedMethod === m.id
-                            ? 'bg-amber-900 text-amber-100 border-amber-900 font-bold'
-                            : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
-                        }`}
+                        className={`py-2 px-2 rounded-lg border font-medium text-center transition-all cursor-pointer ${selectedMethod === m.id
+                          ? 'bg-amber-900 text-amber-100 border-amber-900 font-bold'
+                          : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                          }`}
                       >
                         {m.label}
                       </button>
@@ -665,11 +665,10 @@ export const PaymentPage: React.FC = () => {
                         ? 'e.g. HDFC202610189876'
                         : 'e.g. 429210987654 (12 digits)'
                     }
-                    className={`w-full p-2.5 border rounded-lg font-mono focus:outline-none focus:ring-1 ${
-                      formErrors.utr
-                        ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/20'
-                        : 'border-stone-300 focus:ring-amber-900'
-                    }`}
+                    className={`w-full p-2.5 border rounded-lg font-mono focus:outline-none focus:ring-1 ${formErrors.utr
+                      ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/20'
+                      : 'border-stone-300 focus:ring-amber-900'
+                      }`}
                   />
                   {formErrors.utr && <p className="text-rose-600 text-[11px] mt-1">{formErrors.utr}</p>}
                   <p className="text-[10px] text-stone-400 mt-1">
@@ -685,11 +684,10 @@ export const PaymentPage: React.FC = () => {
                     value={payerName}
                     onChange={(e) => setPayerName(e.target.value)}
                     placeholder="Full name as shown in banking app"
-                    className={`w-full p-2.5 border rounded-lg focus:outline-none focus:ring-1 ${
-                      formErrors.payerName
-                        ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/20'
-                        : 'border-stone-300 focus:ring-amber-900'
-                    }`}
+                    className={`w-full p-2.5 border rounded-lg focus:outline-none focus:ring-1 ${formErrors.payerName
+                      ? 'border-rose-400 focus:ring-rose-500 bg-rose-50/20'
+                      : 'border-stone-300 focus:ring-amber-900'
+                      }`}
                   />
                   {formErrors.payerName && <p className="text-rose-600 text-[11px] mt-1">{formErrors.payerName}</p>}
                 </div>

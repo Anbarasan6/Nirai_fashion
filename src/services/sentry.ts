@@ -82,9 +82,8 @@ export async function initSentry(): Promise<void> {
         return event;
       },
     });
-  } catch (err) {
-    // Ad-blocker or network error - ignore gracefully
-    console.debug('[Sentry] Initialization skipped or blocked by client.');
+  } catch {
+    // Ad-blocker or network error - fail silently without polluting console
   }
 }
 

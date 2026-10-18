@@ -59,6 +59,7 @@ cp .env.example .env
 | `VITE_SUPABASE_ANON_KEY` | **Yes** | Your public Supabase anon API key. |
 | `VITE_CLOUDINARY_CLOUD_NAME` | **Yes** | Cloudinary account Cloud Name. |
 | `VITE_CLOUDINARY_UPLOAD_PRESET` | **Yes** | Cloudinary unsigned upload preset for media storage. |
+| `VITE_SENTRY_DSN` | Optional | Sentry DSN for privacy-preserving client error monitoring. |
 | `APP_URL` / `SITE_URL` | Optional | Canonical base URL of the application (default: `http://localhost:3000`). |
 | `RESEND_API_KEY` | **Yes (Prod)** | Resend API key for transactional emails (`re_...`). |
 | `NOTIFY_FROM_EMAIL` | **Yes (Prod)** | Verified sending address (e.g. `"Nirai Handlooms <orders@nirai.in>"`). |
@@ -75,9 +76,21 @@ cp .env.example .env
 |---|---|
 | `npm run dev` | Starts Vite local development server on `http://localhost:3000`. |
 | `npm run build` | Compiles TypeScript and builds optimized production assets in `/dist`. |
-| `npm run preview` | Previews the production build locally. |
-| `npm run lint` | Runs TypeScript type checking without emitting files (`tsc --noEmit`). |
+| `npm run preview` | Previews the production build locally on `http://localhost:4173`. |
+| `npm run typecheck` | Runs TypeScript type checking without emitting files (`tsc --noEmit`). |
+| `npm run analyze` | Builds with interactive Rollup bundle treemap analyzer (`dist/stats.html`). |
 | `npm run clean` | Removes the compiled `/dist` directory. |
+
+---
+
+## Performance & Error Monitoring
+
+- **Bundle Size & Reliability Report**: See [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) for full chunk sizes, Core Web Vitals targets, and loading/empty/error state audits.
+- **Sentry Integration**:
+  - Lazily initialized via `requestIdleCallback` to protect the initial main thread.
+  - Privacy First: `sendDefaultPii: false`, scrubbing of emails, phone numbers, and UTRs via `beforeSend`.
+  - Sensitive routes (`/pay`, `/checkout`, `/account`, `/admin`) have bodies and headers completely stripped.
+  - Zero crashes when blocked by client-side ad-blockers.
 
 ---
 
