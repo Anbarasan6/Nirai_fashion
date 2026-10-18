@@ -6,22 +6,26 @@ export const OfflineBanner: React.FC = () => {
   const [showRestored, setShowRestored] = useState(false);
 
   useEffect(() => {
+    let timer: any = null;
+
     const handleOnline = () => {
       setIsOffline(false);
       setShowRestored(true);
-      const timer = setTimeout(() => setShowRestored(false), 3500);
-      return () => clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setShowRestored(false), 3500);
     };
 
     const handleOffline = () => {
       setIsOffline(true);
       setShowRestored(false);
+      if (timer) clearTimeout(timer);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
     return () => {
+      if (timer) clearTimeout(timer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

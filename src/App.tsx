@@ -23,12 +23,18 @@ import {
   TableSkeleton,
 } from './components/common/Skeletons';
 
-// Core entry pages retained in primary bundle
+// Core entry page retained in primary bundle
 import { HomePage } from './pages/HomePage';
-import { CatalogPage } from './pages/CatalogPage';
-import { CartPage } from './pages/CartPage';
 
-// Code-split auxiliary and heavy pages via lazyRetry
+// Code-split catalog, cart, PDP, checkout, and auxiliary pages via lazyRetry
+const CatalogPage = lazyRetry(
+  () => import('./pages/CatalogPage').then((m) => ({ default: m.CatalogPage })),
+  'CatalogPage'
+);
+const CartPage = lazyRetry(
+  () => import('./pages/CartPage').then((m) => ({ default: m.CartPage })),
+  'CartPage'
+);
 const ProductDetailPage = lazyRetry(
   () => import('./pages/ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })),
   'ProductDetailPage'
@@ -91,9 +97,30 @@ const AppLayout: React.FC = () => {
           <Routes>
             {/* Core Storefront */}
             <Route path="/" element={<HomePage />} />
-            <Route path="/catalog" element={<CatalogPage />} />
-            <Route path="/catalog/:categorySlug" element={<CatalogPage />} />
-            <Route path="/cart" element={<CartPage />} />
+            <Route
+              path="/catalog"
+              element={
+                <Suspense fallback={<ProductGridSkeleton />}>
+                  <CatalogPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/catalog/:categorySlug"
+              element={
+                <Suspense fallback={<ProductGridSkeleton />}>
+                  <CatalogPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/cart"
+              element={
+                <Suspense fallback={<PageSkeleton />}>
+                  <CartPage />
+                </Suspense>
+              }
+            />
 
             {/* Code-split Product Detail with Skeleton */}
             <Route

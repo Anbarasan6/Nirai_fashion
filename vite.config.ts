@@ -29,26 +29,33 @@ export default defineConfig(() => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
-                return 'vendor-react';
+              if (id.includes('@sentry')) {
+                return 'vendor-sentry';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
               }
               if (id.includes('react-router') || id.includes('react-router-dom')) {
                 return 'vendor-router';
               }
+              if (
+                id.includes('/node_modules/react/') ||
+                id.includes('\\node_modules\\react\\') ||
+                id.includes('/node_modules/react-dom/') ||
+                id.includes('\\node_modules\\react-dom\\') ||
+                id.includes('/node_modules/scheduler/') ||
+                id.includes('\\node_modules\\scheduler\\')
+              ) {
+                return 'vendor-react';
+              }
               if (id.includes('@supabase')) {
                 return 'vendor-supabase';
-              }
-              if (id.includes('lucide-react')) {
-                return 'vendor-icons';
               }
               if (id.includes('qrcode')) {
                 return 'vendor-qrcode';
               }
               if (id.includes('zod')) {
                 return 'vendor-zod';
-              }
-              if (id.includes('@sentry')) {
-                return 'vendor-sentry';
               }
             }
           },

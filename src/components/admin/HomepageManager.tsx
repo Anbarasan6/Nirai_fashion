@@ -506,7 +506,12 @@ export const HomepageManager: React.FC = () => {
 
           {/* Slides List */}
           <div className="space-y-4 pt-2">
-            {heroSlides.map((slide, idx) => (
+            {heroSlides.length === 0 ? (
+              <div className="py-8 text-center bg-stone-50 rounded-xl border border-dashed border-stone-200 text-stone-500 text-xs">
+                No hero slides configured. Click "Add New Hero Slide" to create your first banner.
+              </div>
+            ) : (
+              heroSlides.map((slide, idx) => (
               <div
                 key={slide.id}
                 className="bg-stone-50/70 rounded-xl border border-stone-200 p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4"
@@ -598,7 +603,7 @@ export const HomepageManager: React.FC = () => {
                   </button>
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
       )}

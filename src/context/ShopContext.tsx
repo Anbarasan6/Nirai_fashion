@@ -363,7 +363,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const openProduct = (slug: string) => {
     setSelectedProductSlug(slug);
     _setActiveTab('pdp');
-    navigate(`/product/${slug}`);
+    if (window.location.pathname !== `/product/${slug}`) {
+      navigate(`/product/${slug}`);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
