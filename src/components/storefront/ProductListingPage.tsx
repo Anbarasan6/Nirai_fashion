@@ -43,50 +43,72 @@ export const ProductListingPage: React.FC = () => {
   const [maxPrice, setMaxPrice] = useState<number>(15000);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  // Fetch paginated products from Supabase
-  const loadProducts = useCallback(async () => {
-    setIsLoading(true);
-    setFetchError(null);
+  // Debounce search input (300ms) to avoid hammering the database on every keystroke
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  const [reloadKey, setReloadKey] = useState(0);
 
-    const sortMap: Record<string, 'price-asc' | 'price-desc' | 'rating' | 'newest'> = {
-      'price-asc': 'price-asc',
-      'price-desc': 'price-desc',
-      'rating': 'rating',
-      'newest': 'newest',
-      'featured': 'newest',
-    };
+  const retryLoad = () => {
+    setReloadKey((prev) => prev + 1);
+  };
 
-    const res = await fetchProductsPaginated({
-      page,
-      pageSize,
-      search: searchQuery.trim() || undefined,
-      categoryId: selectedCategory && selectedCategory !== 'all' ? selectedCategory : undefined,
-      sortBy: sortMap[sortBy] || 'newest',
-      includeInactive: false,
-    });
-
-    if (res.error) {
-      setFetchError(res.error);
-      setProducts([]);
-      setTotalCount(0);
-      setTotalPages(1);
-    } else {
-      setProducts(res.data);
-      setTotalCount(res.totalCount);
-      setTotalPages(res.totalPages || 1);
-    }
-    setIsLoading(false);
-  }, [page, pageSize, searchQuery, selectedCategory, sortBy]);
-
-  // Re-fetch whenever filters or page changes
   useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch paginated products from Supabase with request cancellation guard
+  useEffect(() => {
+    let ignore = false;
+
+    async function executeFetch() {
+      setIsLoading(true);
+      setFetchError(null);
+
+      const sortMap: Record<string, 'price-asc' | 'price-desc' | 'rating' | 'newest'> = {
+        'price-asc': 'price-asc',
+        'price-desc': 'price-desc',
+        'rating': 'rating',
+        'newest': 'newest',
+        'featured': 'newest',
+      };
+
+      const res = await fetchProductsPaginated({
+        page,
+        pageSize,
+        search: debouncedSearch.trim() || undefined,
+        categoryId: selectedCategory && selectedCategory !== 'all' ? selectedCategory : undefined,
+        sortBy: sortMap[sortBy] || 'newest',
+        includeInactive: false,
+      });
+
+      if (!ignore) {
+        if (res.error) {
+          setFetchError(res.error);
+          setProducts([]);
+          setTotalCount(0);
+          setTotalPages(1);
+        } else {
+          setProducts(res.data);
+          setTotalCount(res.totalCount);
+          setTotalPages(res.totalPages || 1);
+        }
+        setIsLoading(false);
+      }
+    }
+
+    executeFetch();
+
+    return () => {
+      ignore = true;
+    };
+  }, [page, pageSize, debouncedSearch, selectedCategory, sortBy, reloadKey]);
 
   // Reset page to 1 when search or category changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, selectedCategory]);
+  }, [debouncedSearch, selectedCategory]);
 
   // Unique fabrics present in current page results
   const fabrics = useMemo(() => {
@@ -345,7 +367,7 @@ export const ProductListingPage: React.FC = () => {
                   {fetchError}
                 </p>
                 <button
-                  onClick={loadProducts}
+                  onClick={retryLoad}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-rose-900 hover:bg-rose-950 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />

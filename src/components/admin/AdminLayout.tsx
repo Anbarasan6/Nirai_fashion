@@ -4,6 +4,7 @@ import { useShop } from '../../context/ShopContext';
 import { supabase } from '../../services/supabase';
 import { StorageService } from '../../services/storage';
 import { User, Order } from '../../types';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import {
   LayoutDashboard,
   Package,
@@ -48,6 +49,9 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!isAuthorized) return;
+
+    // Load admin-specific entities on-demand (orders, users, suppliers, couriers, media, etc.)
+    StorageService.syncAdminData();
 
     const fetchPending = async () => {
       const { count, error } = await supabase
@@ -384,7 +388,11 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         </header>
 
         {/* Page Content */}
-        <div className="p-6 sm:p-8 flex-1">{children}</div>
+        <div className="p-6 sm:p-8 flex-1">
+          <ErrorBoundary level="admin" name={`admin-${adminTab}`}>
+            {children}
+          </ErrorBoundary>
+        </div>
       </main>
     </div>
   );

@@ -75,9 +75,17 @@ export async function checkSupabaseConnection(): Promise<boolean> {
   }
 }
 
+import { sessionCache } from './cache';
+
 // ==============================================================================
 // 1. PRODUCTS & CATALOG (Server-side Pagination & Filtering)
 // ==============================================================================
+
+/**
+ * Selective columns for storefront catalog lists (avoids fetching long descriptions, care instructions, and reviews)
+ */
+export const CATALOG_LIST_COLUMNS =
+  'id, sku, name_en, name_ta, slug, short_desc_en, short_desc_ta, category_id, sub_category_id, brand, fabric, base_price, regular_discount, special_discount, final_price, stock, is_featured, is_new_arrival, is_active, images, variants, rating, review_count, created_at';
 
 export interface FetchProductsOptions {
   page?: number;
@@ -88,6 +96,7 @@ export interface FetchProductsOptions {
   isNewArrival?: boolean;
   includeInactive?: boolean;
   sortBy?: 'price-asc' | 'price-desc' | 'rating' | 'newest';
+  columns?: string;
 }
 
 function mapProductRow(row: any): Product {
@@ -140,6 +149,7 @@ export async function fetchProductsPaginated(
     isNewArrival,
     includeInactive = false,
     sortBy = 'newest',
+    columns = CATALOG_LIST_COLUMNS,
   } = options;
 
   const from = (page - 1) * pageSize;
@@ -148,7 +158,7 @@ export async function fetchProductsPaginated(
   try {
     let query = supabase
       .from('products')
-      .select('*', { count: 'exact' });
+      .select(columns, { count: 'exact' });
 
     if (!includeInactive) {
       query = query.eq('is_active', true);
@@ -213,8 +223,15 @@ export async function fetchProductsPaginated(
 }
 
 export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
-  const result = await fetchProductsPaginated({ page: 1, pageSize: 100, includeInactive: true });
+  const result = await fetchProductsPaginated({ page: 1, pageSize: 100, includeInactive: true, columns: '*' });
   return result.error ? null : result.data;
+}
+
+export async function fetchActiveProductsForStorefront(): Promise<Product[] | null> {
+  return sessionCache.fetchWithCache('storefront_active_products', async () => {
+    const result = await fetchProductsPaginated({ page: 1, pageSize: 60, includeInactive: false });
+    return result.error ? null : result.data;
+  }, 3 * 60 * 1000); // 3 minutes TTL
 }
 
 export async function fetchProductBySlug(slug: string): Promise<Product | null> {
@@ -289,30 +306,33 @@ export async function deleteProductFromSupabase(productId: string): Promise<bool
 // ==============================================================================
 
 export async function fetchCategoriesFromSupabase(includeInactive = false): Promise<Category[] | null> {
-  try {
-    let query = supabase.from('categories').select('*').order('display_order', { ascending: true });
-    if (!includeInactive) {
-      query = query.eq('is_active', true);
-    }
-    const { data, error } = await query;
-    if (error || !data) return null;
+  const cacheKey = `categories_${includeInactive}`;
+  return sessionCache.fetchWithCache(cacheKey, async () => {
+    try {
+      let query = supabase.from('categories').select('*').order('display_order', { ascending: true });
+      if (!includeInactive) {
+        query = query.eq('is_active', true);
+      }
+      const { data, error } = await query;
+      if (error || !data) return null;
 
-    return data.map((row: any) => ({
-      id: row.id,
-      slug: row.slug,
-      nameEn: row.name_en,
-      nameTa: row.name_ta || '',
-      level: row.level || 1,
-      parentId: row.parent_id,
-      image: row.image || '',
-      descriptionEn: row.description_en || '',
-      descriptionTa: row.description_ta || '',
-      isActive: row.is_active !== false,
-      itemCount: row.item_count || 0,
-    }));
-  } catch {
-    return null;
-  }
+      return data.map((row: any) => ({
+        id: row.id,
+        slug: row.slug,
+        nameEn: row.name_en,
+        nameTa: row.name_ta || '',
+        level: row.level || 1,
+        parentId: row.parent_id,
+        image: row.image || '',
+        descriptionEn: row.description_en || '',
+        descriptionTa: row.description_ta || '',
+        isActive: row.is_active !== false,
+        itemCount: row.item_count || 0,
+      }));
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function saveCategoryToSupabase(category: Category): Promise<boolean> {
@@ -331,6 +351,9 @@ export async function saveCategoryToSupabase(category: Category): Promise<boolea
       item_count: category.itemCount || 0,
     };
     const { error } = await supabase.from('categories').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      sessionCache.invalidate('categories');
+    }
     return !error;
   } catch {
     return false;
@@ -340,6 +363,9 @@ export async function saveCategoryToSupabase(category: Category): Promise<boolea
 export async function deleteCategoryFromSupabase(categoryId: string): Promise<boolean> {
   try {
     const { error } = await supabase.from('categories').delete().eq('id', categoryId);
+    if (!error) {
+      sessionCache.invalidate('categories');
+    }
     return !error;
   } catch {
     return false;
@@ -547,45 +573,47 @@ export async function deleteCouponFromSupabase(couponId: string): Promise<boolea
 // ==============================================================================
 
 export async function fetchSettingsFromSupabase(): Promise<StoreSettings | null> {
-  try {
-    // Attempt reading public_settings view (available to public and authenticated)
-    let { data, error } = await supabase.from('public_settings').select('*').limit(1).single();
+  return sessionCache.fetchWithCache('store_settings', async () => {
+    try {
+      // Attempt reading public_settings view (available to public and authenticated)
+      let { data, error } = await supabase.from('public_settings').select('*').limit(1).single();
 
-    if (error || !data) {
-      // Fallback to direct settings table
-      const res = await supabase.from('settings').select('*').limit(1).single();
-      data = res.data;
+      if (error || !data) {
+        // Fallback to direct settings table
+        const res = await supabase.from('settings').select('*').limit(1).single();
+        data = res.data;
+      }
+
+      if (!data) return null;
+
+      return {
+        storeName: data.store_name || 'Nirai',
+        taglineEn: data.tagline_en || '',
+        taglineTa: data.tagline_ta || '',
+        logo: data.logo || { altText: 'Nirai Traditional Handlooms' },
+        heroSlides: Array.isArray(data.hero_slides) ? data.hero_slides : [],
+        promoBanner: data.promo_banner || {},
+        homepageSections: Array.isArray(data.homepage_sections) ? data.homepage_sections : [],
+        freeShippingThreshold: Number(data.free_shipping_threshold) || 1500,
+        standardShippingFee: Number(data.standard_shipping_fee) || 120,
+        shippingRules: data.shipping_rules || {
+          tamilNaduStandard: 80,
+          tamilNaduExpress: 160,
+          indiaStandard: 120,
+          indiaExpress: 220,
+        },
+        announcementEn: data.announcement_en || '',
+        announcementTa: data.announcement_ta || '',
+        supportPhone: '+91 44 2498 7654',
+        supportEmail: 'care@nirai.in',
+        isAnnouncementActive: data.is_announcement_active !== false,
+        bankDetails: data.bank_details,
+        upiDetails: data.upi_details,
+      };
+    } catch {
+      return null;
     }
-
-    if (!data) return null;
-
-    return {
-      storeName: data.store_name || 'Nirai',
-      taglineEn: data.tagline_en || '',
-      taglineTa: data.tagline_ta || '',
-      logo: data.logo || { altText: 'Nirai Traditional Handlooms' },
-      heroSlides: Array.isArray(data.hero_slides) ? data.hero_slides : [],
-      promoBanner: data.promo_banner || {},
-      homepageSections: Array.isArray(data.homepage_sections) ? data.homepage_sections : [],
-      freeShippingThreshold: Number(data.free_shipping_threshold) || 1500,
-      standardShippingFee: Number(data.standard_shipping_fee) || 120,
-      shippingRules: data.shipping_rules || {
-        tamilNaduStandard: 80,
-        tamilNaduExpress: 160,
-        indiaStandard: 120,
-        indiaExpress: 220,
-      },
-      announcementEn: data.announcement_en || '',
-      announcementTa: data.announcement_ta || '',
-      supportPhone: '+91 44 2498 7654',
-      supportEmail: 'care@nirai.in',
-      isAnnouncementActive: data.is_announcement_active !== false,
-      bankDetails: data.bank_details,
-      upiDetails: data.upi_details,
-    };
-  } catch {
-    return null;
-  }
+  });
 }
 
 export async function saveSettingsToSupabase(settings: StoreSettings): Promise<boolean> {
@@ -610,6 +638,9 @@ export async function saveSettingsToSupabase(settings: StoreSettings): Promise<b
       updated_at: new Date().toISOString(),
     };
     const { error } = await supabase.from('settings').upsert(row, { onConflict: 'id' });
+    if (!error) {
+      sessionCache.invalidate('store_settings');
+    }
     return !error;
   } catch {
     return false;

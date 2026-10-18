@@ -23,6 +23,7 @@ import {
 } from '../types';
 import {
   fetchProductsFromSupabase,
+  fetchActiveProductsForStorefront,
   saveProductToSupabase,
   deleteProductFromSupabase,
   fetchCategoriesFromSupabase,
@@ -924,28 +925,12 @@ export const StorageService = {
     try {
       memoryCache.fetchError = null;
 
-      const [
-        remoteProducts,
-        remoteCategories,
-        remoteOrders,
-        remoteUsers,
-        remoteCoupons,
-        remoteSettings,
-        remoteSuppliers,
-        remoteCouriers,
-        remoteMedia,
-        remoteMovements,
-      ] = await Promise.all([
-        fetchProductsFromSupabase(),
+      // Storefront initial load: only load essentials (active catalog, categories, store settings)
+      // This saves 7 unnecessary admin table requests on initial load
+      const [remoteProducts, remoteCategories, remoteSettings] = await Promise.all([
+        fetchActiveProductsForStorefront(),
         fetchCategoriesFromSupabase(),
-        fetchOrdersFromSupabase(),
-        fetchUsersFromSupabase(),
-        fetchCouponsFromSupabase(),
         fetchSettingsFromSupabase(),
-        fetchSuppliersFromSupabase(),
-        fetchCouriersFromSupabase(),
-        fetchMediaItemsFromSupabase(),
-        fetchStockMovementsFromSupabase(),
       ]);
 
       // If both products and categories failed to load, register an error state
@@ -958,14 +943,7 @@ export const StorageService = {
 
       if (remoteProducts) memoryCache.products = remoteProducts;
       if (remoteCategories) memoryCache.categories = remoteCategories;
-      if (remoteOrders) memoryCache.orders = remoteOrders;
-      if (remoteUsers) memoryCache.users = remoteUsers;
-      if (remoteCoupons) memoryCache.coupons = remoteCoupons;
       if (remoteSettings) memoryCache.settings = remoteSettings;
-      if (remoteSuppliers) memoryCache.suppliers = remoteSuppliers;
-      if (remoteCouriers) memoryCache.couriers = remoteCouriers;
-      if (remoteMedia) memoryCache.mediaItems = remoteMedia;
-      if (remoteMovements) memoryCache.stockMovements = remoteMovements;
 
       memoryCache.isLoaded = true;
       notifyListeners();
@@ -975,6 +953,46 @@ export const StorageService = {
       memoryCache.fetchError = errorMsg;
       notifyListeners();
       return { success: false, error: errorMsg };
+    }
+  },
+
+  /**
+   * Loaded on-demand when staff/admin logs into the admin portal
+   */
+  async syncAdminData(): Promise<void> {
+    try {
+      const [
+        remoteAllProducts,
+        remoteOrders,
+        remoteUsers,
+        remoteCoupons,
+        remoteSuppliers,
+        remoteCouriers,
+        remoteMedia,
+        remoteMovements,
+      ] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchOrdersFromSupabase(),
+        fetchUsersFromSupabase(),
+        fetchCouponsFromSupabase(),
+        fetchSuppliersFromSupabase(),
+        fetchCouriersFromSupabase(),
+        fetchMediaItemsFromSupabase(),
+        fetchStockMovementsFromSupabase(),
+      ]);
+
+      if (remoteAllProducts) memoryCache.products = remoteAllProducts;
+      if (remoteOrders) memoryCache.orders = remoteOrders;
+      if (remoteUsers) memoryCache.users = remoteUsers;
+      if (remoteCoupons) memoryCache.coupons = remoteCoupons;
+      if (remoteSuppliers) memoryCache.suppliers = remoteSuppliers;
+      if (remoteCouriers) memoryCache.couriers = remoteCouriers;
+      if (remoteMedia) memoryCache.mediaItems = remoteMedia;
+      if (remoteMovements) memoryCache.stockMovements = remoteMovements;
+
+      notifyListeners();
+    } catch (err) {
+      console.warn('Admin data sync note:', err);
     }
   },
 
