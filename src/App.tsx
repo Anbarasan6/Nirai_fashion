@@ -16,6 +16,7 @@ import { CatalogPage } from './pages/CatalogPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
+import { PaymentPage } from './pages/PaymentPage';
 import { OrderTrackingPage } from './pages/OrderTrackingPage';
 import { CustomerAccountPage } from './pages/CustomerAccountPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -44,6 +45,7 @@ const AppLayout: React.FC = () => {
           <Route path="/product/:slug" element={<ProductDetailPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/pay/:orderNumber" element={<PaymentPage />} />
           <Route path="/tracking" element={<OrderTrackingPage />} />
           <Route path="/tracking/:orderId" element={<OrderTrackingPage />} />
           <Route

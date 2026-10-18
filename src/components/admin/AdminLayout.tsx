@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { supabase } from '../../services/supabase';
-import { User } from '../../types';
+import { StorageService } from '../../services/storage';
+import { User, Order } from '../../types';
 import {
   LayoutDashboard,
   Package,
@@ -237,6 +238,13 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = adminTab === item.id;
+            const pendingVerificationCount =
+              item.id === 'orders'
+                ? StorageService.getOrders().filter(
+                    (o: Order) => o.paymentStatus === 'Verification Pending'
+                  ).length
+                : 0;
+
             return (
               <button
                 key={item.id}
@@ -244,14 +252,24 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                   setAdminTab(item.id as any);
                   navigate(`/admin/${item.id}`);
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-amber-800/90 text-white shadow-xs'
                     : 'text-stone-300 hover:bg-[#341C20] hover:text-white'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-stone-400'}`} />
-                <span>{item.label}</span>
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-stone-400'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {pendingVerificationCount > 0 && (
+                  <span
+                    title={`${pendingVerificationCount} offline payments awaiting manual verification`}
+                    className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-black text-[10px] animate-pulse"
+                  >
+                    {pendingVerificationCount}
+                  </span>
+                )}
               </button>
             );
           })}

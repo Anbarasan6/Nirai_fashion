@@ -125,9 +125,93 @@ export type OrderStatus =
   | 'Cancelled'
   | 'Returned';
 
-export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'PENDING_VERIFICATION';
+export type PaymentStatus =
+  | 'Awaiting Payment'
+  | 'Verification Pending'
+  | 'Paid'
+  | 'Rejected'
+  | 'Expired'
+  | 'Refunded'
+  | 'Pending'
+  | 'PENDING_VERIFICATION'
+  | 'Failed';
 
-export type PaymentMethod = 'ONLINE_UPI' | 'ONLINE_CARD' | 'BANK_TRANSFER';
+export type PaymentMethod = 'ONLINE_UPI' | 'BANK_TRANSFER' | 'COD' | 'ONLINE_CARD';
+
+export interface PaymentSettings {
+  id: string;
+  upiId: string;
+  payeeName: string;
+  accountName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  branch: string;
+  qrImagePath?: string | null;
+  paymentDeadlineHours: number;
+  codEnabled: boolean;
+  instructionsEn?: string;
+  instructionsTa?: string;
+  updatedAt?: string;
+}
+
+export interface PaymentSubmission {
+  id: string;
+  orderId: string;
+  utr: string;
+  amountPaid: number;
+  paidAt: string;
+  payerName: string;
+  method: 'upi' | 'bank_transfer' | 'qr' | 'cash';
+  screenshotPath?: string | null;
+  status: 'submitted' | 'verified' | 'rejected';
+  rejectReason?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  createdAt: string;
+}
+
+export interface PaymentInstructions {
+  success: boolean;
+  error?: string;
+  order_id: string;
+  order_number: string;
+  customer_name: string;
+  customer_phone: string;
+  amount_due: number;
+  order_status: string;
+  payment_status: PaymentStatus;
+  payment_method: string;
+  payment_due_at: string;
+  payment_deadline_hours: number;
+  is_expired: boolean;
+  upi_details: {
+    upi_id: string;
+    payee_name: string;
+    qr_image_path?: string | null;
+  };
+  bank_details: {
+    account_name: string;
+    account_number: string;
+    ifsc_code: string;
+    bank_name: string;
+    branch: string;
+  };
+  cod_enabled: boolean;
+  instructions: {
+    en: string;
+    ta: string;
+  };
+  latest_submission?: {
+    id: string;
+    utr: string;
+    amount_paid: number;
+    method: string;
+    status: 'submitted' | 'verified' | 'rejected';
+    reject_reason?: string | null;
+    created_at: string;
+  } | null;
+}
 
 export interface BankDetails {
   bankName: string;
@@ -225,6 +309,8 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
+  paymentDueAt?: string;
+  paymentSubmissions?: PaymentSubmission[];
   utrNumber?: string;
   paymentProofUrl?: string;
   shippingDetails?: ShippingDetails;

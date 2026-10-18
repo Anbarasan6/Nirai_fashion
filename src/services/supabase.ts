@@ -23,6 +23,9 @@ import {
   CartQuote,
   PlaceOrderPayload,
   TrackingResult,
+  PaymentSettings,
+  PaymentSubmission,
+  PaymentInstructions,
 } from '../types';
 
 export const SUPABASE_URL = env.VITE_SUPABASE_URL;
@@ -406,6 +409,7 @@ export async function fetchOrdersPaginated(
       status: row.status,
       paymentStatus: row.payment_status,
       paymentMethod: row.payment_method,
+      paymentDueAt: row.payment_due_at || undefined,
       utrNumber: row.payment_details?.utrNumber,
       paymentProofUrl: row.payment_details?.paymentProofUrl,
       shippingDetails: row.shipping_details || undefined,
@@ -1216,4 +1220,335 @@ export async function cancelOrderViaRpc(
     return { success: false, error: err.message || 'Cancellation request failed' };
   }
 }
+
+// ==============================================================================
+// 13. SECURE MANUAL PAYMENT ENGINE (Settings, Submissions, Verification)
+// ==============================================================================
+
+export async function fetchPaymentSettingsFromSupabase(): Promise<PaymentSettings | null> {
+  try {
+    const { data, error } = await supabase
+      .from('payment_settings')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      upiId: data.upi_id,
+      payeeName: data.payee_name,
+      accountName: data.account_name,
+      accountNumber: data.account_number,
+      ifscCode: data.ifsc_code,
+      bankName: data.bank_name,
+      branch: data.branch,
+      qrImagePath: data.qr_image_path,
+      paymentDeadlineHours: data.payment_deadline_hours || 24,
+      codEnabled: Boolean(data.cod_enabled),
+      instructionsEn: data.instructions_en,
+      instructionsTa: data.instructions_ta,
+      updatedAt: data.updated_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function savePaymentSettingsToSupabase(
+  settings: Partial<PaymentSettings>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const row: any = {
+      id: 'default',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (settings.upiId !== undefined) row.upi_id = settings.upiId.trim();
+    if (settings.payeeName !== undefined) row.payee_name = settings.payeeName.trim();
+    if (settings.accountName !== undefined) row.account_name = settings.accountName.trim();
+    if (settings.accountNumber !== undefined) row.account_number = settings.accountNumber.trim();
+    if (settings.ifscCode !== undefined) row.ifsc_code = settings.ifscCode.toUpperCase().trim();
+    if (settings.bankName !== undefined) row.bank_name = settings.bankName.trim();
+    if (settings.branch !== undefined) row.branch = settings.branch.trim();
+    if (settings.qrImagePath !== undefined) row.qr_image_path = settings.qrImagePath;
+    if (settings.paymentDeadlineHours !== undefined) row.payment_deadline_hours = Number(settings.paymentDeadlineHours);
+    if (settings.codEnabled !== undefined) row.cod_enabled = Boolean(settings.codEnabled);
+    if (settings.instructionsEn !== undefined) row.instructions_en = settings.instructionsEn;
+    if (settings.instructionsTa !== undefined) row.instructions_ta = settings.instructionsTa;
+
+    const { error } = await supabase.from('payment_settings').upsert(row, { onConflict: 'id' });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getPaymentInstructionsViaRpc(
+  orderId?: string,
+  orderNumber?: string,
+  phone?: string
+): Promise<{ success: boolean; data?: PaymentInstructions; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('get_payment_instructions', {
+      p_order_id: orderId || null,
+      p_order_number: orderNumber || null,
+      p_phone: phone || null,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Unable to retrieve payment instructions.' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Payment instructions request failed' };
+  }
+}
+
+export async function submitPaymentProofViaRpc(params: {
+  orderNumber: string;
+  phone: string;
+  utr: string;
+  method: string;
+  amountPaid: number;
+  payerName: string;
+  screenshotPath?: string;
+}): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('submit_payment_proof', {
+      p_order_number: params.orderNumber.trim(),
+      p_phone: params.phone.trim(),
+      p_utr: params.utr.trim(),
+      p_method: params.method,
+      p_amount_paid: params.amountPaid,
+      p_payer_name: params.payerName.trim(),
+      p_screenshot_path: params.screenshotPath || null,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Payment proof submission failed' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Payment proof submission failed' };
+  }
+}
+
+export async function verifyPaymentViaRpc(
+  submissionId: string,
+  notes?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('verify_payment', {
+      p_submission_id: submissionId,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Payment verification failed' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Payment verification request failed' };
+  }
+}
+
+export async function rejectPaymentViaRpc(
+  submissionId: string,
+  reason: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('reject_payment', {
+      p_submission_id: submissionId,
+      p_reason: reason.trim(),
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Payment rejection failed' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Payment rejection request failed' };
+  }
+}
+
+export async function markOrderPaidManuallyViaRpc(
+  orderId: string,
+  notes: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('mark_order_paid_manually', {
+      p_order_id: orderId,
+      p_notes: notes.trim(),
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    if (!data || data.success === false) {
+      return { success: false, error: data?.error || 'Manual payment marking failed' };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Manual payment marking request failed' };
+  }
+}
+
+export async function fetchPaymentSubmissionsForOrder(orderId: string): Promise<PaymentSubmission[]> {
+  try {
+    const { data, error } = await supabase
+      .from('payment_submissions')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((s: any) => ({
+      id: s.id,
+      orderId: s.order_id,
+      utr: s.utr,
+      amountPaid: Number(s.amount_paid) || 0,
+      paidAt: s.paid_at,
+      payerName: s.payer_name,
+      method: s.method,
+      screenshotPath: s.screenshot_path,
+      status: s.status,
+      rejectReason: s.reject_reason,
+      verifiedBy: s.verified_by,
+      verifiedAt: s.verified_at,
+      createdAt: s.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchPendingPaymentSubmissions(): Promise<PaymentSubmission[]> {
+  try {
+    const { data, error } = await supabase
+      .from('payment_submissions')
+      .select('*')
+      .eq('status', 'submitted')
+      .order('created_at', { ascending: true }); // Oldest first for verification queue
+
+    if (error || !data) return [];
+
+    return data.map((s: any) => ({
+      id: s.id,
+      orderId: s.order_id,
+      utr: s.utr,
+      amountPaid: Number(s.amount_paid) || 0,
+      paidAt: s.paid_at,
+      payerName: s.payer_name,
+      method: s.method,
+      screenshotPath: s.screenshot_path,
+      status: s.status,
+      rejectReason: s.reject_reason,
+      verifiedBy: s.verified_by,
+      verifiedAt: s.verified_at,
+      createdAt: s.created_at,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function uploadPaymentProof(
+  orderId: string,
+  file: File
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  try {
+    if (file.size > 2 * 1024 * 1024) {
+      return { success: false, error: 'File size exceeds maximum limit of 2 MB.' };
+    }
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      return { success: false, error: 'Only JPG, PNG, and WebP images are allowed.' };
+    }
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `${orderId}/${crypto.randomUUID()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('payment-proofs')
+      .upload(filePath, file, {
+        upsert: false,
+        contentType: file.type,
+      });
+
+    if (uploadError) {
+      return { success: false, error: uploadError.message };
+    }
+
+    return { success: true, path: filePath };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'File upload failed' };
+  }
+}
+
+export async function getSignedPaymentProofUrl(path: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.storage
+      .from('payment-proofs')
+      .createSignedUrl(path, 3600); // 1 hour valid
+
+    if (error || !data?.signedUrl) return null;
+    return data.signedUrl;
+  } catch {
+    return null;
+  }
+}
+
+export async function uploadPaymentQrImage(
+  file: File
+): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
+  try {
+    if (file.size > 5 * 1024 * 1024) {
+      return { success: false, error: 'File size exceeds maximum limit of 5 MB.' };
+    }
+
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+    const filePath = `qr-code-${Date.now()}.${fileExt}`;
+
+    const { error } = await supabase.storage
+      .from('payment-qr')
+      .upload(filePath, file, {
+        upsert: true,
+        contentType: file.type,
+      });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    const { data } = supabase.storage.from('payment-qr').getPublicUrl(filePath);
+    return { success: true, publicUrl: data.publicUrl };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'QR upload failed' };
+  }
+}
+
 

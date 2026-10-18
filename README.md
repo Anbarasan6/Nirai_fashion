@@ -31,10 +31,14 @@
 - **Bilingual Interface**: Instant English and Tamil language switching across menus, product filters, specifications, care guides, and policies.
 - **Handloom Catalog & Discovery**: Instant filtering by saree weave type, border style, occasion, fabric, price range, and search terms.
 - **Catalog Price Tamper Protection**: Unit prices and order totals are recalculated and verified against live catalog records during checkout.
+- **Dynamic UPI QR & Bank Transfer Flow**: Dedicated `/pay/:orderNumber` portal with dynamic UPI QR generation (`qrcode`), mobile deep linking (`upi://pay`), masked account details, countdown timer, and proof submission.
 - **Live Fulfillment Tracking**: 5-step milestone tracking (`Ordered` → `Confirmed` → `Packed` → `Shipped` → `Delivered`) via order number and billing verification.
 - **Crash-Resilience**: Top-level `ErrorBoundary` prevents application crashes and provides recovery fallbacks.
 
-### Operations & Admin Console
+### Operations, Security & Admin Console
+- **Manual Payment Verification Engine**: Offline UPI and Bank Transfer verification workflow. Customer submissions transition orders to `Verification Pending` (never auto-marked as Paid). Staff verify transactions against merchant statements before confirming orders.
+- **Admin Reconciliation Queue**: Oldest-first review queue with duplicate UTR detection, mismatch warnings, and signed receipt previews. Detailed procedures documented in [ADMIN_GUIDE.md](ADMIN_GUIDE.md).
+- **Automated Expiry & Restock**: Unpaid orders past the payment window (default 24h) are automatically cancelled with inventory restored to stock.
 - **Admin Modules**: Dashboard analytics, Catalog Manager, Order Fulfillment & Status Lifecycle, Customer CRM, Stock Movements, Supplier Management, Courier Partner Integrations, Promotional Coupons, and Media Library.
 - **Code-Split Bundles**: All admin modules are lazily loaded with `React.lazy()` and `<Suspense>`, keeping the initial customer storefront bundle lightweight.
 - **Dynamic CMS**: In-browser banner and homepage section arrangement with Cloudinary media integration.

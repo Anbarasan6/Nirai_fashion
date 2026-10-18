@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { trackOrderViaRpc } from '../../services/supabase';
 import { OrderStatus, TrackingResult } from '../../types';
@@ -235,6 +236,61 @@ export const OrderTrackingPage: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Payment Status State Banner */}
+            {trackingResult.payment_status === 'Awaiting Payment' && trackingResult.status !== 'Cancelled' && (
+              <div className="p-4 bg-amber-50 border-b border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-900">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-700" />
+                  <span>
+                    <strong>Payment Awaiting:</strong> Please complete your UPI or Bank Transfer to confirm this order.
+                  </span>
+                </div>
+                <Link
+                  to={`/pay/${trackingResult.order_number}`}
+                  className="px-4 py-1.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold rounded-lg shrink-0 text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Pay Now &amp; Submit Proof</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Verification Pending' && (
+              <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center gap-2.5 text-xs text-blue-900">
+                <Clock className="w-4 h-4 shrink-0 text-blue-700" />
+                <span>
+                  <strong>Payment Verification Pending:</strong> Your payment proof has been submitted. Our accounting team is manually verifying the transaction against bank statements (confirmed within 2–4 hours).
+                </span>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Rejected' && trackingResult.status !== 'Cancelled' && (
+              <div className="p-4 bg-rose-50 border-b border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-rose-900">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-700" />
+                  <span>
+                    <strong>Payment Rejected:</strong> Your last submission could not be verified against our bank statement.
+                  </span>
+                </div>
+                <Link
+                  to={`/pay/${trackingResult.order_number}`}
+                  className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-semibold rounded-lg shrink-0 text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Submit Proof Again</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Paid' && (
+              <div className="p-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2 text-xs text-emerald-900">
+                <Check className="w-4 h-4 shrink-0 text-emerald-700" />
+                <span>
+                  <strong>Payment Confirmed:</strong> Handloom attire is now reserved and being prepared for fulfillment.
+                </span>
+              </div>
+            )}
 
             {/* Stepper Timeline */}
             <div className="p-6 sm:p-8 border-b border-stone-100">

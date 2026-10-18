@@ -17,6 +17,9 @@ import {
   PromoBannerConfig,
   HomepageSectionItem,
   LogoSettings,
+  PaymentSettings,
+  PaymentSubmission,
+  PaymentInstructions,
 } from '../types';
 import {
   fetchProductsFromSupabase,
@@ -54,6 +57,18 @@ import {
   cancelOrderViaRpc,
   quoteCartViaRpc,
   trackOrderViaRpc,
+  fetchPaymentSettingsFromSupabase,
+  savePaymentSettingsToSupabase,
+  getPaymentInstructionsViaRpc,
+  submitPaymentProofViaRpc,
+  verifyPaymentViaRpc,
+  rejectPaymentViaRpc,
+  markOrderPaidManuallyViaRpc,
+  fetchPaymentSubmissionsForOrder,
+  fetchPendingPaymentSubmissions,
+  uploadPaymentProof,
+  getSignedPaymentProofUrl,
+  uploadPaymentQrImage,
   supabase,
 } from './supabase';
 
@@ -495,6 +510,131 @@ export const StorageService = {
     }
 
     return { success: true };
+  },
+
+  // ============================================================================
+  // PAYMENT VERIFICATION & SETTINGS (Secure RPCs)
+  // ============================================================================
+
+  async getPaymentInstructions(
+    orderId?: string,
+    orderNumber?: string,
+    phone?: string
+  ): Promise<{ success: boolean; data?: PaymentInstructions; error?: string }> {
+    return getPaymentInstructionsViaRpc(orderId, orderNumber, phone);
+  },
+
+  async submitPaymentProof(params: {
+    orderNumber: string;
+    phone: string;
+    utr: string;
+    method: string;
+    amountPaid: number;
+    payerName: string;
+    screenshotPath?: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await submitPaymentProofViaRpc(params);
+    if (res.success) {
+      const order = memoryCache.orders.find(
+        (o) => o.orderNumber.toUpperCase() === params.orderNumber.trim().toUpperCase()
+      );
+      if (order) {
+        order.paymentStatus = 'Verification Pending';
+        order.utrNumber = params.utr.trim();
+        order.updatedAt = new Date().toISOString();
+        notifyListeners();
+      }
+    }
+    return res;
+  },
+
+  async verifyPayment(
+    submissionId: string,
+    notes?: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await verifyPaymentViaRpc(submissionId, notes);
+    if (res.success) {
+      if (res.data?.order_id) {
+        const order = memoryCache.orders.find((o) => o.id === res.data.order_id);
+        if (order) {
+          order.paymentStatus = 'Paid';
+          order.status = 'Confirmed';
+          order.updatedAt = new Date().toISOString();
+        }
+      }
+      notifyListeners();
+    }
+    return res;
+  },
+
+  async rejectPayment(
+    submissionId: string,
+    reason: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await rejectPaymentViaRpc(submissionId, reason);
+    if (res.success) {
+      if (res.data?.order_id) {
+        const order = memoryCache.orders.find((o) => o.id === res.data.order_id);
+        if (order) {
+          order.paymentStatus = 'Rejected';
+          order.updatedAt = new Date().toISOString();
+        }
+      }
+      notifyListeners();
+    }
+    return res;
+  },
+
+  async markOrderPaidManually(
+    orderId: string,
+    notes: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await markOrderPaidManuallyViaRpc(orderId, notes);
+    if (res.success) {
+      const order = memoryCache.orders.find((o) => o.id === orderId);
+      if (order) {
+        order.paymentStatus = 'Paid';
+        order.status = 'Confirmed';
+        order.updatedAt = new Date().toISOString();
+        notifyListeners();
+      }
+    }
+    return res;
+  },
+
+  async getPaymentSubmissions(orderId: string): Promise<PaymentSubmission[]> {
+    return fetchPaymentSubmissionsForOrder(orderId);
+  },
+
+  async getPendingPaymentSubmissions(): Promise<PaymentSubmission[]> {
+    return fetchPendingPaymentSubmissions();
+  },
+
+  async getPaymentSettings(): Promise<PaymentSettings | null> {
+    return fetchPaymentSettingsFromSupabase();
+  },
+
+  async savePaymentSettings(
+    settings: Partial<PaymentSettings>
+  ): Promise<{ success: boolean; error?: string }> {
+    return savePaymentSettingsToSupabase(settings);
+  },
+
+  async uploadPaymentProof(
+    orderId: string,
+    file: File
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    return uploadPaymentProof(orderId, file);
+  },
+
+  async getSignedPaymentProofUrl(path: string): Promise<string | null> {
+    return getSignedPaymentProofUrl(path);
+  },
+
+  async uploadPaymentQrImage(
+    file: File
+  ): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
+    return uploadPaymentQrImage(file);
   },
 
   // ============================================================================

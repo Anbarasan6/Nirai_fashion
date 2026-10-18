@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { User, Address } from '../../types';
@@ -15,6 +16,7 @@ import {
   Trash2,
   CheckCircle,
   X,
+  CreditCard,
 } from 'lucide-react';
 
 export const CustomerAccountPage: React.FC = () => {
@@ -299,14 +301,29 @@ export const CustomerAccountPage: React.FC = () => {
                             Placed on {new Date(order.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
+                              order.paymentStatus === 'Paid'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : order.paymentStatus === 'Verification Pending'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : order.paymentStatus === 'Rejected'
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : order.paymentStatus === 'Expired'
+                                ? 'bg-stone-100 text-stone-600 border-stone-200'
+                                : 'bg-yellow-50 text-yellow-800 border-yellow-200'
+                            }`}
+                          >
+                            Payment: {order.paymentStatus || 'Awaiting Payment'}
+                          </span>
                           <span
                             className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
                               order.status === 'Delivered'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : order.status === 'Cancelled'
                                 ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-900'
+                                : 'bg-stone-100 text-stone-800'
                             }`}
                           >
                             {order.status}
@@ -332,12 +349,22 @@ export const CustomerAccountPage: React.FC = () => {
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                      <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="text-stone-500">
                           {order.shippingDetails?.courierName || 'Standard Express'} ·{' '}
                           {order.shippingDetails?.trackingId || 'Preparing'}
                         </span>
                         <div className="flex items-center gap-3">
+                          {(order.paymentStatus === 'Awaiting Payment' || order.paymentStatus === 'Rejected') &&
+                            order.status !== 'Cancelled' && (
+                              <Link
+                                to={`/pay/${order.orderNumber}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-900 hover:bg-amber-800 text-amber-50 font-bold rounded text-xs transition-colors shadow-2xs"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>{order.paymentStatus === 'Rejected' ? 'Resubmit Proof' : 'Pay / Submit Proof'}</span>
+                              </Link>
+                            )}
                           {(order.status === 'Pending' || order.status === 'Confirmed') && (
                             <button
                               onClick={() => handleCancelOrder(order.id, order.orderNumber)}
