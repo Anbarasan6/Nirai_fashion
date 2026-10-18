@@ -311,6 +311,7 @@ export interface Order {
   paymentMethod: PaymentMethod;
   paymentDueAt?: string;
   paymentSubmissions?: PaymentSubmission[];
+  paymentDetails?: Record<string, any>;
   utrNumber?: string;
   paymentProofUrl?: string;
   shippingDetails?: ShippingDetails;

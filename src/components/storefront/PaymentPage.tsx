@@ -24,12 +24,32 @@ import {
   FileCheck,
 } from 'lucide-react';
 
-const paymentProofSchema = z.object({
-  method: z.enum(['upi', 'qr', 'bank_transfer']),
-  utr: z.string().trim().min(6, 'Reference number is required'),
-  amountPaid: z.number().positive('Amount must be greater than zero'),
-  payerName: z.string().trim().min(2, 'Payer name is required'),
-});
+const paymentProofSchema = z
+  .object({
+    method: z.enum(['upi', 'qr', 'bank_transfer']),
+    utr: z.string().trim().toUpperCase(),
+    amountPaid: z.number().positive('Amount must be greater than zero'),
+    payerName: z.string().trim().min(2, 'Payer name is required'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === 'upi' || data.method === 'qr') {
+      if (!/^\d{12}$/.test(data.utr)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['utr'],
+          message: 'UPI UTR reference must be exactly 12 numeric digits.',
+        });
+      }
+    } else if (data.method === 'bank_transfer') {
+      if (!/^[A-Z0-9]{6,22}$/.test(data.utr)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['utr'],
+          message: 'Bank transfer reference (NEFT/IMPS/RTGS) must be 6 to 22 alphanumeric characters.',
+        });
+      }
+    }
+  });
 
 export const PaymentPage: React.FC = () => {
   const { orderNumber } = useParams<{ orderNumber: string }>();
@@ -188,22 +208,22 @@ export const PaymentPage: React.FC = () => {
     e.preventDefault();
     if (!instructions || !orderNumber) return;
 
-    // Validate UTR format based on method
+    // Validate UTR and details using paymentProofSchema
     const cleanUtr = utr.trim().toUpperCase();
-    if (selectedMethod === 'upi' || selectedMethod === 'qr') {
-      if (!/^[0-9]{12}$/.test(cleanUtr)) {
-        setFormErrors({ utr: 'Please enter the exact 12-digit numeric UTR reference from your UPI app.' });
-        return;
-      }
-    } else {
-      if (!/^[A-Za-z0-9]{6,22}$/.test(cleanUtr)) {
-        setFormErrors({ utr: 'Please enter a valid 6-22 character bank transfer reference.' });
-        return;
-      }
-    }
+    const parseResult = paymentProofSchema.safeParse({
+      method: selectedMethod,
+      utr: cleanUtr,
+      amountPaid: instructions.amount_due,
+      payerName: payerName.trim(),
+    });
 
-    if (!payerName.trim()) {
-      setFormErrors({ payerName: 'Please enter the payer name registered on the bank/UPI account.' });
+    if (!parseResult.success) {
+      const fieldErrors: { utr?: string; payerName?: string } = {};
+      for (const issue of parseResult.error.issues) {
+        if (issue.path[0] === 'utr') fieldErrors.utr = issue.message;
+        if (issue.path[0] === 'payerName') fieldErrors.payerName = issue.message;
+      }
+      setFormErrors(fieldErrors);
       return;
     }
 

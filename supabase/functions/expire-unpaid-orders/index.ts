@@ -6,7 +6,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
 };
 
 Deno.serve(async (req: Request) => {
@@ -17,10 +17,26 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const expectedCronSecret = Deno.env.get('CRON_SECRET');
+
+    // 1. Authenticate caller: Must supply valid CRON_SECRET or service role bearer token
+    const incomingCronSecret = req.headers.get('x-cron-secret');
+    const authHeader = req.headers.get('authorization') || '';
+    const isServiceRole = Boolean(supabaseServiceKey && authHeader === `Bearer ${supabaseServiceKey}`);
+    const isCronSecretValid = Boolean(expectedCronSecret && incomingCronSecret === expectedCronSecret);
+
+    if (!isServiceRole && !isCronSecretValid) {
+      return new Response(
+        JSON.stringify({
+          error: 'Unauthorized: Function requires a valid x-cron-secret header or service role authorization token.',
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
-        JSON.stringify({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' }),
+        JSON.stringify({ error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY configuration' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -38,13 +54,18 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const expiredCount = data ?? 0;
+    const expiredResult = data ?? {};
+    const expiredCount = typeof expiredResult === 'object' && expiredResult !== null
+      ? (expiredResult.expired_count ?? 0)
+      : (typeof expiredResult === 'number' ? expiredResult : 0);
+
     console.log(`expire_unpaid_orders executed successfully. Expired orders count: ${expiredCount}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         expired_count: expiredCount,
+        details: expiredResult,
         executed_at: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

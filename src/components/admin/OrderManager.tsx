@@ -242,6 +242,8 @@ export const OrderManager: React.FC = () => {
   const [rejectReasonInput, setRejectReasonInput] = useState('');
   const [manualPaidModalOpen, setManualPaidModalOpen] = useState(false);
   const [manualPaidNoteInput, setManualPaidNoteInput] = useState('');
+  const [mismatchModalSub, setMismatchModalSub] = useState<PaymentSubmission | null>(null);
+  const [mismatchConfirmInput, setMismatchConfirmInput] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   // Modal form state
@@ -296,11 +298,25 @@ export const OrderManager: React.FC = () => {
 
   const handleVerifyPayment = async (sub: PaymentSubmission) => {
     if (!selectedOrder) return;
+    const isAmountMismatch = Math.abs(sub.amountPaid - selectedOrder.grandTotal) > 0.01;
+
+    // Requirement 5: If amount_paid differs from expected amount, require admin to type VERIFY
+    if (isAmountMismatch) {
+      setMismatchModalSub(sub);
+      setMismatchConfirmInput('');
+      return;
+    }
+
     const confirmed = window.confirm(
       `Confirm Payment Verification:\n\nOrder: #${selectedOrder.orderNumber}\nUTR: ${sub.utr}\nAmount: ₹${sub.amountPaid.toLocaleString()}\nPayer: ${sub.payerName}\n\nHave you verified this credit in your merchant bank/UPI statement?`
     );
     if (!confirmed) return;
 
+    await executeVerifyPayment(sub);
+  };
+
+  const executeVerifyPayment = async (sub: PaymentSubmission) => {
+    if (!selectedOrder) return;
     setIsVerifyingSubId(sub.id);
     setIsActionLoading(true);
     try {
@@ -315,6 +331,7 @@ export const OrderManager: React.FC = () => {
         });
         setPaymentStatus('Paid');
         setStatus('Confirmed');
+        setMismatchModalSub(null);
         await loadSubmissions(selectedOrder.id);
       } else {
         showToast(res.error || 'Payment verification failed', 'error');
@@ -653,9 +670,22 @@ export const OrderManager: React.FC = () => {
                       <span className="text-[11px] font-semibold text-slate-700 block">
                         {order.paymentMethod === 'ONLINE_UPI' ? 'Direct UPI' : order.paymentMethod}
                       </span>
-                      <span className={`text-[10px] font-bold ${getPayBadge(order.paymentStatus)}`}>
-                        {order.paymentStatus === 'PENDING_VERIFICATION' ? 'Verifying...' : order.paymentStatus}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[10px] font-bold ${getPayBadge(order.paymentStatus)}`}>
+                          {order.paymentStatus === 'PENDING_VERIFICATION' ? 'Verifying...' : order.paymentStatus}
+                        </span>
+                        {/* Requirement 6: Warning badge on submissions waiting > 24 hours */}
+                        {order.paymentStatus === 'Verification Pending' &&
+                          Date.now() - new Date(order.paymentDetails?.submittedAt || order.createdAt).getTime() > 24 * 60 * 60 * 1000 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300"
+                              title="Submission waiting > 24 hours"
+                            >
+                              <AlertTriangle className="w-3 h-3 text-rose-700" />
+                              &gt;24h Stale
+                            </span>
+                          )}
+                      </div>
                       {order.utrNumber && (
                         <span className="text-[10px] text-stone-400 block font-mono">UTR: {order.utrNumber}</span>
                       )}
@@ -842,21 +872,160 @@ export const OrderManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Verification */}
-              <div className="rounded-xl border border-stone-200 p-4 space-y-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <CreditCard className="w-4 h-4 text-amber-800" />
-                  <span className="font-serif font-bold text-slate-900">Payment Verification Details:</span>
+              {/* Payment Verification & Customer Submissions */}
+              <div className="rounded-xl border border-stone-200 p-4 space-y-3 bg-stone-50/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-amber-800" />
+                    <span className="font-serif font-bold text-slate-900 text-xs">
+                      Payment Verification &amp; Customer Submissions
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManualPaidModalOpen(true)}
+                    className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Mark Paid Manually
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                {loadingSubmissions ? (
+                  <div className="py-4 text-center text-stone-500 text-xs">
+                    Loading customer payment submissions...
+                  </div>
+                ) : submissions.length === 0 ? (
+                  <div className="p-3 bg-white rounded-lg border border-stone-200 text-stone-500 text-xs">
+                    No offline payment submissions found for this order.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {submissions.map((sub) => {
+                      const isStale = Date.now() - new Date(sub.createdAt).getTime() > 24 * 60 * 60 * 1000;
+                      const isAmountMismatch = Math.abs(sub.amountPaid - selectedOrder.grandTotal) > 0.01;
+                      const proofUrl = signedProofUrls[sub.id];
+
+                      return (
+                        <div
+                          key={sub.id}
+                          className={`p-3 rounded-lg border bg-white space-y-2 ${
+                            sub.status === 'submitted'
+                              ? isAmountMismatch
+                                ? 'border-amber-400 bg-amber-50/20'
+                                : 'border-stone-300'
+                              : sub.status === 'verified'
+                              ? 'border-emerald-200 bg-emerald-50/20'
+                              : 'border-rose-200 bg-rose-50/20'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-bold text-xs text-slate-900">
+                                  UTR: {sub.utr}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700">
+                                  {sub.method}
+                                </span>
+                                {sub.status === 'submitted' && isStale && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    <AlertTriangle className="w-3 h-3 text-amber-700" />
+                                    Waiting &gt;24h (Stale)
+                                  </span>
+                                )}
+                                {sub.status === 'verified' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    <Check className="w-3 h-3" /> Verified
+                                  </span>
+                                )}
+                                {sub.status === 'rejected' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
+                                    <Ban className="w-3 h-3" /> Rejected
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-stone-600">
+                                Payer: <strong>{sub.payerName}</strong> · Submitted: {new Date(sub.createdAt).toLocaleString()}
+                              </p>
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="font-bold text-slate-800">
+                                  Paid: ₹{sub.amountPaid.toLocaleString()}
+                                </span>
+                                {isAmountMismatch && (
+                                  <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> Expected ₹{selectedOrder.grandTotal.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                              {sub.rejectReason && (
+                                <p className="text-[11px] text-rose-700 bg-rose-50 p-1.5 rounded border border-rose-200">
+                                  Reason: {sub.rejectReason}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Screenshot preview or link */}
+                            {proofUrl && (
+                              <a
+                                href={proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 group flex flex-col items-center gap-1 p-1.5 border border-stone-200 rounded-lg hover:border-amber-800 transition"
+                                title="Click to view full screenshot proof"
+                              >
+                                <img
+                                  src={proofUrl}
+                                  alt="Proof screenshot"
+                                  className="w-14 h-14 object-cover rounded"
+                                />
+                                <span className="text-[9px] text-amber-900 group-hover:underline flex items-center gap-0.5 font-semibold">
+                                  View <ExternalLink className="w-2.5 h-2.5" />
+                                </span>
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Action buttons for submitted items */}
+                          {sub.status === 'submitted' && (
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRejectingSub(sub);
+                                  setRejectReasonInput('');
+                                }}
+                                disabled={isActionLoading}
+                                className="px-3 py-1 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-semibold cursor-pointer"
+                              >
+                                Reject Proof
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyPayment(sub)}
+                                disabled={isActionLoading || isVerifyingSubId === sub.id}
+                                className="px-4 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                {isVerifyingSubId === sub.id ? 'Verifying...' : 'Verify Payment'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
                   <div>
-                    <label className="block font-semibold text-stone-600 mb-1">UPI / UTR Ref #</label>
+                    <label className="block font-semibold text-stone-600 mb-1">Active UPI / UTR Ref #</label>
                     <input
                       type="text"
                       value={utrNumber}
                       onChange={(e) => setUtrNumber(e.target.value)}
                       placeholder="e.g. 123456789012"
-                      className="w-full p-2 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800"
+                      className="w-full p-2 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800 text-xs"
                     />
                   </div>
                   <div>
@@ -865,7 +1034,7 @@ export const OrderManager: React.FC = () => {
                       type="text"
                       value={selectedOrder.paymentMethod}
                       readOnly
-                      className="w-full p-2 border border-stone-200 rounded-lg bg-stone-50 text-stone-500"
+                      className="w-full p-2 border border-stone-200 rounded-lg bg-stone-50 text-stone-500 text-xs"
                     />
                   </div>
                 </div>
@@ -1108,6 +1277,79 @@ export const OrderManager: React.FC = () => {
                 className="px-4 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
               >
                 {isActionLoading ? 'Marking Paid...' : 'Confirm Paid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Amount Mismatch Confirmation Modal (Requirement 5) */}
+      {mismatchModalSub && selectedOrder && (
+        <div className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2 text-amber-800">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <h3 className="font-serif font-bold text-base">Confirm Amount Mismatch</h3>
+              </div>
+              <button
+                onClick={() => setMismatchModalSub(null)}
+                className="text-stone-400 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600">
+              The amount paid on this submission differs from the order grand total. Please confirm both figures carefully against your merchant account:
+            </p>
+
+            <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-600">Expected Order Total:</span>
+                <span className="font-bold text-slate-900 font-mono">₹{selectedOrder.grandTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-600">Customer Amount Paid:</span>
+                <span className="font-bold text-amber-900 font-mono">₹{mismatchModalSub.amountPaid.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-t border-amber-200 pt-1.5 font-bold">
+                <span className="text-stone-700">Discrepancy:</span>
+                <span className="text-rose-700 font-mono">
+                  {mismatchModalSub.amountPaid < selectedOrder.grandTotal ? '-' : '+'}₹
+                  {Math.abs(mismatchModalSub.amountPaid - selectedOrder.grandTotal).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Type <strong className="font-mono text-slate-900 bg-stone-100 px-1 py-0.5 rounded">VERIFY</strong> to approve this payment:
+              </label>
+              <input
+                type="text"
+                value={mismatchConfirmInput}
+                onChange={(e) => setMismatchConfirmInput(e.target.value)}
+                placeholder="VERIFY"
+                className="w-full text-xs p-2.5 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800 uppercase"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setMismatchModalSub(null)}
+                className="px-3 py-1.5 border border-stone-300 text-stone-700 rounded-lg text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeVerifyPayment(mismatchModalSub)}
+                disabled={isActionLoading || mismatchConfirmInput.trim() !== 'VERIFY'}
+                className="px-4 py-1.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg text-xs font-semibold disabled:opacity-40 cursor-pointer"
+              >
+                {isActionLoading ? 'Verifying...' : 'Confirm & Verify'}
               </button>
             </div>
           </div>

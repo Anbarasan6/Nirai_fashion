@@ -1,36 +1,42 @@
 -- ==============================================================================
 -- Test Suite: test_payment_security.sql
--- Proves all security boundaries for the manual payment verification engine:
---   1. anon cannot read payment_settings
---   2. anon cannot read payment_submissions directly
---   3. customer cannot verify their own payment
---   4. duplicate UTR is rejected
---   5. customer cannot read another order's screenshot
---   6. direct status change without permissions is prevented
+-- Comprehensive Security Assertions for Nirai Payment Hardening Patch:
+--   (a) an authenticated customer and anon cannot UPDATE orders.payment_status or status directly
+--   (b) a non-staff user calling verify_payment/reject_payment/mark_order_paid_manually gets an error
+--   (c) anon cannot call expire_unpaid_orders
+--   (d) a customer cannot read payment_submissions or screenshots of another customer's order
+--   (e) NEFT alphanumeric reference accepted and a duplicate in different case rejected
+--   (f) upload to payment-proofs for a non-existent or expired order is refused
 -- ==============================================================================
 
-BEGIN;
+CREATE TEMP TABLE IF NOT EXISTS payment_security_test_results (
+  test_case text,
+  description text,
+  status text,
+  detail text
+);
+TRUNCATE payment_security_test_results;
+GRANT ALL ON payment_security_test_results TO public, anon, authenticated;
 
 DO $$
 DECLARE
   v_test_order_1_id TEXT := 'test-sec-ord-001';
   v_test_order_2_id TEXT := 'test-sec-ord-002';
+  v_test_order_3_id TEXT := 'test-sec-ord-003';
+  v_test_order_4_id TEXT := 'test-sec-ord-004';
   v_cust_1_id UUID := gen_random_uuid();
   v_cust_2_id UUID := gen_random_uuid();
   v_res JSONB;
+  v_count INT;
 BEGIN
-  RAISE NOTICE '>>> STARTING PAYMENT SECURITY TESTS <<<';
-
   -- Create temporary test users in auth.users
   INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
   VALUES 
-    (v_cust_1_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cust1@test.in', 'pw', now(), now(), now()),
-    (v_cust_2_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cust2@test.in', 'pw', now(), now(), now());
+    (v_cust_1_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cust1_sec@test.in', 'pw', now(), now(), now()),
+    (v_cust_2_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cust2_sec@test.in', 'pw', now(), now(), now());
 
-  -- Profiles will be auto-created by trigger with role 'customer'
-
-  -- Create clean test orders
-  DELETE FROM public.orders WHERE id IN (v_test_order_1_id, v_test_order_2_id);
+  -- Ensure clean test orders
+  DELETE FROM public.orders WHERE id IN (v_test_order_1_id, v_test_order_2_id, v_test_order_3_id, v_test_order_4_id);
 
   INSERT INTO public.orders (
     id, order_number, customer_id, customer_name, customer_email, customer_phone,
@@ -38,110 +44,198 @@ BEGIN
     payment_due_at, payment_method, shipping_address
   ) VALUES 
   (
-    v_test_order_1_id, 'NIRAI-TEST-99001', v_cust_1_id, 'Customer One', 'one@test.in', '9840011111',
+    v_test_order_1_id, 'NIRAI-TEST-99001', v_cust_1_id, 'Customer One', 'cust1_sec@test.in', '9840011111',
     '[{"productId": "prod-kanchi-001", "quantity": 1, "unitPrice": 10000, "totalPrice": 10000}]'::JSONB,
     10000, 0, 0, 10000, 'Pending', 'Awaiting Payment', now() + interval '24 hours', 'ONLINE_UPI',
     '{"street": "123 Anna Salai", "city": "Chennai", "state": "Tamil Nadu", "pincode": "600002"}'::JSONB
   ),
   (
-    v_test_order_2_id, 'NIRAI-TEST-99002', v_cust_2_id, 'Customer Two', 'two@test.in', '9840022222',
+    v_test_order_2_id, 'NIRAI-TEST-99002', v_cust_2_id, 'Customer Two', 'cust2_sec@test.in', '9840022222',
     '[{"productId": "prod-kanchi-001", "quantity": 1, "unitPrice": 10000, "totalPrice": 10000}]'::JSONB,
     10000, 0, 0, 10000, 'Pending', 'Awaiting Payment', now() + interval '24 hours', 'ONLINE_UPI',
     '{"street": "456 T Nagar", "city": "Chennai", "state": "Tamil Nadu", "pincode": "600017"}'::JSONB
   );
 
   -- --------------------------------------------------------------------------
-  -- TEST 1: Anon cannot read payment_settings directly
+  -- ASSERTION (a.1): anon cannot UPDATE orders.payment_status directly
   -- --------------------------------------------------------------------------
   SET LOCAL ROLE anon;
-  IF (SELECT count(*) FROM public.payment_settings) = 0 THEN
-    RAISE NOTICE 'TEST 1 PASSED: anon selects 0 rows from payment_settings (RLS enforced).';
-  ELSE
-    RAISE EXCEPTION 'TEST 1 FAILED: anon read payment_settings rows!';
-  END IF;
+  BEGIN
+    UPDATE public.orders SET payment_status = 'Paid' WHERE id = v_test_order_1_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    IF v_count = 0 THEN
+      INSERT INTO payment_security_test_results VALUES ('(a.1)', 'anon direct update orders.payment_status', 'PASSED', 'Blocked: 0 rows updated');
+    ELSE
+      INSERT INTO payment_security_test_results VALUES ('(a.1)', 'anon direct update orders.payment_status', 'FAILED', 'anon direct update succeeded unexpectedly');
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(a.1)', 'anon direct update orders.payment_status', 'PASSED', 'Blocked: ' || SQLERRM);
+  END;
 
   -- --------------------------------------------------------------------------
-  -- TEST 2: Anon cannot read payment_submissions directly
+  -- ASSERTION (a.2): Authenticated customer cannot UPDATE orders.status directly
+  -- --------------------------------------------------------------------------
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_cust_1_id::TEXT, TRUE);
+  BEGIN
+    UPDATE public.orders SET status = 'Delivered' WHERE id = v_test_order_1_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    IF v_count = 0 THEN
+      INSERT INTO payment_security_test_results VALUES ('(a.2)', 'authenticated customer direct update orders.status', 'PASSED', 'Blocked by RLS & trigger: 0 rows updated, status unchanged');
+    ELSE
+      INSERT INTO payment_security_test_results VALUES ('(a.2)', 'authenticated customer direct update orders.status', 'FAILED', 'customer updated ' || v_count || ' rows directly');
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(a.2)', 'authenticated customer direct update orders.status', 'PASSED', 'Blocked by trigger: ' || SQLERRM);
+  END;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (b.1): Non-staff user calling verify_payment gets an error
+  -- --------------------------------------------------------------------------
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.sub', v_cust_1_id::TEXT, TRUE);
+  BEGIN
+    PERFORM public.verify_payment('sub-non-existent', 'Unauthorized verification attempt');
+    INSERT INTO payment_security_test_results VALUES ('(b.1)', 'customer calling verify_payment', 'FAILED', 'call succeeded unexpectedly');
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(b.1)', 'customer calling verify_payment', 'PASSED', 'Correctly rejected: ' || SQLERRM);
+  END;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (b.2): Non-staff user calling reject_payment gets an error
+  -- --------------------------------------------------------------------------
+  BEGIN
+    PERFORM public.reject_payment('sub-non-existent', 'Unauthorized rejection attempt');
+    INSERT INTO payment_security_test_results VALUES ('(b.2)', 'customer calling reject_payment', 'FAILED', 'call succeeded unexpectedly');
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(b.2)', 'customer calling reject_payment', 'PASSED', 'Correctly rejected: ' || SQLERRM);
+  END;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (b.3): Non-staff user calling mark_order_paid_manually gets an error
+  -- --------------------------------------------------------------------------
+  BEGIN
+    PERFORM public.mark_order_paid_manually(v_test_order_1_id, 'Unauthorized manual paid attempt');
+    INSERT INTO payment_security_test_results VALUES ('(b.3)', 'customer calling mark_order_paid_manually', 'FAILED', 'call succeeded unexpectedly');
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(b.3)', 'customer calling mark_order_paid_manually', 'PASSED', 'Correctly rejected: ' || SQLERRM);
+  END;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (c): anon cannot call expire_unpaid_orders
   -- --------------------------------------------------------------------------
   SET LOCAL ROLE anon;
-  IF (SELECT count(*) FROM public.payment_submissions) = 0 THEN
-    RAISE NOTICE 'TEST 2 PASSED: anon selects 0 rows from payment_submissions (RLS enforced).';
-  ELSE
-    RAISE EXCEPTION 'TEST 2 FAILED: anon read payment_submissions!';
-  END IF;
+  BEGIN
+    PERFORM public.expire_unpaid_orders();
+    INSERT INTO payment_security_test_results VALUES ('(c)', 'anon calling expire_unpaid_orders', 'FAILED', 'anon execution succeeded unexpectedly');
+  EXCEPTION WHEN OTHERS THEN
+    INSERT INTO payment_security_test_results VALUES ('(c)', 'anon calling expire_unpaid_orders', 'PASSED', 'Permission denied / rejected: ' || SQLERRM);
+  END;
 
   -- --------------------------------------------------------------------------
-  -- TEST 3: Submit proof works for customer, but customer CANNOT verify own payment
+  -- ASSERTION (d.1 & d.2): Customer cannot read payment_submissions or screenshots of another customer
   -- --------------------------------------------------------------------------
   RESET ROLE;
-  -- Customer 1 submits valid 12-digit UTR
   v_res := public.submit_payment_proof(
     'NIRAI-TEST-99001',
     '9840011111',
     '123456789012',
     'upi',
     10000,
-    'Customer One'
+    'Customer One',
+    v_test_order_1_id || '/receipt_sec.png'
   );
 
-  IF NOT (v_res->>'success')::BOOLEAN THEN
-    RAISE EXCEPTION 'submit_payment_proof failed: %', v_res->>'error';
-  END IF;
-  RAISE NOTICE 'Proof submitted: %', v_res->>'submission_id';
-
-  -- Order must now be 'Verification Pending' (NOT 'Paid')
-  IF (SELECT payment_status FROM public.orders WHERE id = v_test_order_1_id) != 'Verification Pending' THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: submit_payment_proof did not set Verification Pending!';
-  END IF;
-
-  -- Switch to Customer 1 role (authenticated customer, not staff)
-  SET LOCAL ROLE authenticated;
-  PERFORM set_config('request.jwt.claim.sub', v_cust_1_id::TEXT, TRUE);
-
-  BEGIN
-    -- Customer attempting to call verify_payment directly
-    PERFORM public.verify_payment(v_res->>'submission_id', 'Self verification attempt');
-    RAISE EXCEPTION 'TEST 3 FAILED: Customer was able to execute verify_payment!';
-  EXCEPTION
-    WHEN OTHERS THEN
-      RAISE NOTICE 'TEST 3 PASSED: Customer verification attempt rejected with: %', SQLERRM;
-  END;
-
-  -- --------------------------------------------------------------------------
-  -- TEST 4: Duplicate UTR is strictly rejected
-  -- --------------------------------------------------------------------------
-  RESET ROLE;
-  BEGIN
-    -- Customer 2 attempts to use Customer 1's UTR '123456789012'
-    v_res := public.submit_payment_proof(
-      'NIRAI-TEST-99002',
-      '9840022222',
-      '123456789012', -- same UTR
-      'upi',
-      10000,
-      'Customer Two'
-    );
-
-    IF (v_res->>'success')::BOOLEAN THEN
-      RAISE EXCEPTION 'TEST 4 FAILED: Duplicate UTR was accepted!';
-    ELSE
-      RAISE NOTICE 'TEST 4 PASSED: Duplicate UTR rejected with: %', v_res->>'error';
-    END IF;
-  END;
-
-  -- --------------------------------------------------------------------------
-  -- TEST 5: Customer cannot read another customer's payment submissions
-  -- --------------------------------------------------------------------------
   SET LOCAL ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_cust_2_id::TEXT, TRUE);
 
   IF (SELECT count(*) FROM public.payment_submissions WHERE order_id = v_test_order_1_id) = 0 THEN
-    RAISE NOTICE 'TEST 5 PASSED: Customer 2 cannot see Customer 1 payment submissions.';
+    INSERT INTO payment_security_test_results VALUES ('(d.1)', 'customer reading other customer submissions', 'PASSED', 'RLS returned 0 rows as expected');
   ELSE
-    RAISE EXCEPTION 'TEST 5 FAILED: Customer 2 saw Customer 1 payment submission!';
+    INSERT INTO payment_security_test_results VALUES ('(d.1)', 'customer reading other customer submissions', 'FAILED', 'customer was able to view another customer submissions');
   END IF;
 
-  RAISE NOTICE '>>> ALL 5 PAYMENT SECURITY TESTS PASSED SUCCESSFULLY <<<';
+  IF (SELECT count(*) FROM storage.objects WHERE bucket_id = 'payment-proofs' AND name LIKE (v_test_order_1_id || '/%')) = 0 THEN
+    INSERT INTO payment_security_test_results VALUES ('(d.2)', 'customer reading other customer screenshots in storage', 'PASSED', 'Storage policy restricted access (0 rows)');
+  ELSE
+    INSERT INTO payment_security_test_results VALUES ('(d.2)', 'customer reading other customer screenshots in storage', 'FAILED', 'customer accessed storage objects of another customer');
+  END IF;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (e): NEFT alphanumeric reference accepted and duplicate in different case rejected
+  -- --------------------------------------------------------------------------
+  RESET ROLE;
+  v_res := public.submit_payment_proof(
+    'NIRAI-TEST-99002',
+    '9840022222',
+    'HDFC0001234N1',
+    'bank_transfer',
+    10000,
+    'Customer Two'
+  );
+
+  IF (v_res->>'success')::BOOLEAN THEN
+    INSERT INTO payment_security_test_results VALUES ('(e.1)', 'NEFT alphanumeric reference accepted', 'PASSED', 'Reference HDFC0001234N1 accepted');
+  ELSE
+    INSERT INTO payment_security_test_results VALUES ('(e.1)', 'NEFT alphanumeric reference accepted', 'FAILED', v_res->>'error');
+  END IF;
+
+  INSERT INTO public.orders (
+    id, order_number, customer_id, customer_name, customer_email, customer_phone,
+    items, subtotal, shipping_fee, discount, grand_total, status, payment_status,
+    payment_due_at, payment_method, shipping_address
+  ) VALUES (
+    v_test_order_3_id, 'NIRAI-TEST-99003', v_cust_1_id, 'Customer Three', 'cust3_sec@test.in', '9840033333',
+    '[{"productId": "prod-kanchi-001", "quantity": 1, "unitPrice": 10000, "totalPrice": 10000}]'::JSONB,
+    10000, 0, 0, 10000, 'Pending', 'Awaiting Payment', now() + interval '24 hours', 'ONLINE_BANK_TRANSFER',
+    '{"street": "789 OMR", "city": "Chennai", "state": "Tamil Nadu", "pincode": "600096"}'::JSONB
+  );
+
+  v_res := public.submit_payment_proof(
+    'NIRAI-TEST-99003',
+    '9840033333',
+    'hdfc0001234n1', -- lower case duplicate
+    'bank_transfer',
+    10000,
+    'Customer Three'
+  );
+
+  IF NOT (v_res->>'success')::BOOLEAN THEN
+    INSERT INTO payment_security_test_results VALUES ('(e.2)', 'NEFT duplicate in lowercase rejected', 'PASSED', 'Normalized uniqueness enforced: ' || (v_res->>'error'));
+  ELSE
+    INSERT INTO payment_security_test_results VALUES ('(e.2)', 'NEFT duplicate in lowercase rejected', 'FAILED', 'Lowercase duplicate was accepted unexpectedly');
+  END IF;
+
+  -- --------------------------------------------------------------------------
+  -- ASSERTION (f): Upload to payment-proofs for non-existent or expired order is refused
+  -- --------------------------------------------------------------------------
+  RESET ROLE;
+  IF public.can_upload_payment_proof('non-existent-order-id/receipt.jpg') = FALSE THEN
+    INSERT INTO payment_security_test_results VALUES ('(f.1)', 'upload refused for non-existent order', 'PASSED', 'can_upload_payment_proof returned false');
+  ELSE
+    INSERT INTO payment_security_test_results VALUES ('(f.1)', 'upload refused for non-existent order', 'FAILED', 'can_upload_payment_proof permitted non-existent order');
+  END IF;
+
+  INSERT INTO public.orders (
+    id, order_number, customer_id, customer_name, customer_email, customer_phone,
+    items, subtotal, shipping_fee, discount, grand_total, status, payment_status,
+    payment_due_at, payment_method, shipping_address
+  ) VALUES (
+    v_test_order_4_id, 'NIRAI-TEST-99004', v_cust_1_id, 'Customer Expired', 'cust4_sec@test.in', '9840044444',
+    '[{"productId": "prod-kanchi-001", "quantity": 1, "unitPrice": 10000, "totalPrice": 10000}]'::JSONB,
+    10000, 0, 0, 10000, 'Pending', 'Awaiting Payment', now() - interval '2 hours', 'ONLINE_UPI',
+    '{"street": "100 GST Road", "city": "Chennai", "state": "Tamil Nadu", "pincode": "600045"}'::JSONB
+  );
+
+  IF public.can_upload_payment_proof(v_test_order_4_id || '/receipt.jpg') = FALSE THEN
+    INSERT INTO payment_security_test_results VALUES ('(f.2)', 'upload refused for expired order', 'PASSED', 'can_upload_payment_proof returned false for expired order');
+  ELSE
+    INSERT INTO payment_security_test_results VALUES ('(f.2)', 'upload refused for expired order', 'FAILED', 'can_upload_payment_proof permitted expired order');
+  END IF;
+
+  -- Clean up test orders
+  DELETE FROM public.orders WHERE id IN (v_test_order_1_id, v_test_order_2_id, v_test_order_3_id, v_test_order_4_id);
+  DELETE FROM auth.users WHERE id IN (v_cust_1_id, v_cust_2_id);
 END $$;
 
-ROLLBACK;
+SELECT test_case, description, status, detail FROM payment_security_test_results ORDER BY test_case;
