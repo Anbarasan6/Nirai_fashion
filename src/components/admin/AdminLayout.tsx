@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { supabase } from '../../services/supabase';
@@ -43,6 +43,57 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     (currentUser.role === 'super_admin' ||
       currentUser.role === 'admin' ||
       currentUser.role === 'staff');
+
+  const [realtimePendingCount, setRealtimePendingCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+
+    const fetchPending = async () => {
+      const { count, error } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('payment_status', 'Verification Pending');
+
+      if (!error && count !== null) {
+        setRealtimePendingCount(count);
+      }
+    };
+
+    fetchPending();
+
+    // RLS ensures only staff/admin receive updates on orders table
+    const channel = supabase
+      .channel('admin_realtime_orders')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+        },
+        (payload: any) => {
+          fetchPending();
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newOrder = payload.new;
+            if (
+              newOrder?.payment_status === 'Verification Pending' &&
+              payload.old?.payment_status !== 'Verification Pending'
+            ) {
+              showToast(
+                `New payment proof submitted for Order #${newOrder.order_number}!`,
+                'info'
+              );
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthorized, showToast]);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -241,9 +292,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
             const isActive = adminTab === item.id;
             const pendingVerificationCount =
               item.id === 'orders'
-                ? StorageService.getOrders().filter(
-                    (o: Order) => o.paymentStatus === 'Verification Pending'
-                  ).length
+                ? realtimePendingCount
                 : 0;
 
             return (

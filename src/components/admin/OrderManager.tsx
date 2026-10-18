@@ -28,6 +28,7 @@ import {
   Check,
   Ban,
   CheckCircle,
+  MessageCircle,
 } from 'lucide-react';
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -61,6 +62,19 @@ const COURIER_OPTIONS = [
 ];
 
 // --- Status badge helpers ---
+const getWhatsAppUrl = (order: Order): string => {
+  const rawPhone = order.customerPhone || order.shippingAddress?.phone || '';
+  const digits = rawPhone.replace(/\D/g, '');
+  let normalized = digits;
+  if (digits.length === 10) {
+    normalized = `91${digits}`;
+  } else if (digits.length > 10 && !digits.startsWith('91')) {
+    normalized = `91${digits.slice(-10)}`;
+  }
+  const msg = `Vanakkam ${order.customerName}, this is regarding your Nirai handloom order #${order.orderNumber} (Total: ₹${order.grandTotal.toLocaleString('en-IN')}).`;
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
+};
+
 function getStatusBadge(status: OrderStatus) {
   const map: Record<OrderStatus, string> = {
     Pending: 'bg-amber-100 text-amber-900 border-amber-200',
@@ -641,7 +655,18 @@ export const OrderManager: React.FC = () => {
 
                     <td className="py-3 px-4">
                       <span className="font-semibold text-slate-900 block">{order.customerName}</span>
-                      <span className="text-[11px] text-stone-500">{order.customerPhone}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-stone-500">{order.customerPhone}</span>
+                        <a
+                          href={getWhatsAppUrl(order)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Contact on WhatsApp"
+                          className="inline-flex items-center p-0.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition cursor-pointer"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
                       <span className="text-[11px] text-stone-400 block truncate max-w-[160px]">
                         {order.shippingAddress.city}, {order.shippingAddress.state} - {order.shippingAddress.pincode}
                       </span>
@@ -781,9 +806,20 @@ export const OrderManager: React.FC = () => {
                 <h3 className="font-serif text-base font-bold text-slate-900">
                   Manage Order #{selectedOrder.orderNumber}
                 </h3>
-                <span className="text-xs text-stone-500">
-                  Customer: {selectedOrder.customerName} ({selectedOrder.customerPhone})
-                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-stone-500">
+                    Customer: {selectedOrder.customerName} ({selectedOrder.customerPhone})
+                  </span>
+                  <a
+                    href={getWhatsAppUrl(selectedOrder)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition shadow-xs cursor-pointer"
+                  >
+                    <MessageCircle className="w-3 h-3" />
+                    Contact on WhatsApp
+                  </a>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}

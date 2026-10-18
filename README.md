@@ -59,7 +59,11 @@ cp .env.example .env
 | `VITE_SUPABASE_ANON_KEY` | **Yes** | Your public Supabase anon API key. |
 | `VITE_CLOUDINARY_CLOUD_NAME` | **Yes** | Cloudinary account Cloud Name. |
 | `VITE_CLOUDINARY_UPLOAD_PRESET` | **Yes** | Cloudinary unsigned upload preset for media storage. |
-| `APP_URL` | Optional | Canonical base URL of the application (default: `http://localhost:3000`). |
+| `APP_URL` / `SITE_URL` | Optional | Canonical base URL of the application (default: `http://localhost:3000`). |
+| `RESEND_API_KEY` | **Yes (Prod)** | Resend API key for transactional emails (`re_...`). |
+| `NOTIFY_FROM_EMAIL` | **Yes (Prod)** | Verified sending address (e.g. `"Nirai Handlooms <orders@nirai.in>"`). |
+| `NOTIFY_WEBHOOK_SECRET` | **Yes** | Shared secret header authenticating Edge Function triggers. |
+| `NOTIFY_DOMAIN_VERIFIED` | Optional | Set to `'true'` once DNS verification (SPF/DKIM/DMARC) is complete. |
 
 > **Note**: Runtime environment configuration is validated on startup via `src/config/env.ts`. If required variables are missing or empty, a descriptive error will be thrown.
 

@@ -120,3 +120,47 @@ To modify the store's UPI VPA, QR code, bank details, or deadline:
 ### Q3: Customer cannot upload receipt screenshot.
 - **Rules**: Max file size is 2 MB. Accepted formats: JPG, PNG, WebP.
 - **Fallback**: Customer can submit just the 12-digit UTR text without screenshot. Staff can verify directly using the UTR on their bank statement.
+
+---
+
+## 7. Transactional Email Outbox & Notification Logs
+
+Nirai utilizes an asynchronous, idempotent database outbox pattern to guarantee that transactional emails are never lost, duplicated, or exposed.
+
+### Accessing the Notification Log:
+1. Navigate to **Notifications & Outbox** (`/admin/notifications`).
+2. The queue displays recent lifecycle events:
+   - `order_placed`: Enqueued automatically with customer Pay Now link upon checkout.
+   - `payment_proof_received`: Customer acknowledgement upon UTR submission.
+   - `admin_payment_pending`: Instant alert dispatched to `admin_notification_emails`.
+   - `payment_verified`: Confirmation email dispatched when order is confirmed.
+   - `payment_rejected`: Rejection notice with explicit reason and correction link.
+   - `payment_reminder`: Scheduled 4-hour countdown reminder.
+   - `order_expired`: Auto-cancellation notice if payment window lapses.
+   - `shipped`: Dispatched with courier partner name, AWB, and live tracking link.
+   - `delivered`: Delivery acknowledgement.
+
+### Retrying Failed Notifications:
+- If an email fails (e.g. invalid recipient mailbox, temporary provider timeout), the engine retries with exponential backoff up to 5 times.
+- After 5 attempts, the status is marked as `'failed'`.
+- To re-queue, click **Retry** next to the failed row. This resets `attempts = 0`, `status = 'pending'`, and schedules immediate re-dispatch.
+
+### Contacting Customer on WhatsApp:
+- On both the Orders list and the Manage Order modal, click **Contact on WhatsApp**.
+- The system normalizes the customer's phone number to international E.164 format (`+91...`) and pre-fills an order-specific message with order number and grand total.
+
+---
+
+## 8. Required Environment Variables & Secrets
+
+Configure the following secrets in your Supabase Edge Function environment:
+
+| Secret Name | Purpose | Example Value |
+|---|---|---|
+| `RESEND_API_KEY` | Resend API key for delivering transactional emails | `re_abc123...` |
+| `NOTIFY_FROM_EMAIL` | Configurable sender address | `Nirai Handlooms <orders@nirai.in>` |
+| `NOTIFY_WEBHOOK_SECRET` | Secret header authenticating Edge Function triggers | `random_32_char_hex` |
+| `SITE_URL` | Canonical store URL for payment & tracking links | `https://nirai.in` |
+| `CRON_SECRET` | Secret for scheduled background maintenance tasks | `random_32_char_hex` |
+| `NOTIFY_DOMAIN_VERIFIED` | Set to `'true'` once SPF/DKIM/DMARC records propagate | `true` |
+

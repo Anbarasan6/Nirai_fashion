@@ -17,31 +17,41 @@ import {
   Info,
   Server,
   Globe,
-  Lock,
+  Settings,
   Copy,
   Check,
+  Plus,
+  Trash2,
+  Sliders,
 } from 'lucide-react';
 
 interface OutboxItem {
   id: string;
+  type: string;
   order_id: string;
   order_number: string;
-  event_type: string;
-  submission_id: string;
-  recipient_email: string;
-  recipient_name: string;
-  subject: string;
+  submission_id: string | null;
+  to_email: string;
+  to_phone: string | null;
+  locale: string;
   payload: Record<string, any>;
   status: 'pending' | 'sent' | 'failed';
-  error_message: string | null;
   attempts: number;
-  sent_at: string | null;
+  next_attempt_at: string | null;
+  last_error: string | null;
   created_at: string;
-  updated_at: string;
+  sent_at: string | null;
+  total_count?: number;
+}
+
+interface NotificationSettingsState {
+  admin_notification_emails: string[];
+  reminder_hours_before_deadline: number;
+  notification_type_toggles: Record<string, boolean>;
 }
 
 export const NotificationManager: React.FC = () => {
-  const { showToast } = useShop();
+  const { showToast, currentUser } = useShop();
 
   const [outbox, setOutbox] = useState<OutboxItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,32 +60,53 @@ export const NotificationManager: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<OutboxItem | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'outbox' | 'dns_guide' | 'smtp_guide'>('outbox');
+  const [activeTab, setActiveTab] = useState<'outbox' | 'settings' | 'dns_guide' | 'smtp_guide'>('outbox');
 
-  // Requirement A: Log clear warning on mount regarding Resend domain verification
+  // Settings State
+  const [settings, setSettings] = useState<NotificationSettingsState>({
+    admin_notification_emails: ['orders@nirai.in'],
+    reminder_hours_before_deadline: 4,
+    notification_type_toggles: {
+      order_placed: true,
+      payment_proof_received: true,
+      payment_verified: true,
+      payment_rejected: true,
+      payment_reminder: true,
+      order_expired: true,
+      shipped: true,
+      delivered: true,
+      cancelled: true,
+      admin_payment_pending: true,
+    },
+  });
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // Check if domain is verified via env
+  const isDomainVerified = import.meta.env.VITE_NOTIFY_DOMAIN_VERIFIED === 'true';
+
+  // Requirement 6: Log warning on mount when domain is not verified
   useEffect(() => {
-    console.warn(
-      '[Nirai Notifications] RESEND DOMAIN LIMITATION: Resend in sandbox mode ONLY delivers emails to the verified Resend account owner email. In order to deliver transactional emails to customers at scale, custom domain verification (SPF, DKIM, DMARC) is mandatory before launch.'
-    );
-  }, []);
+    if (!isDomainVerified) {
+      console.warn(
+        '[Nirai Notifications] RESEND DOMAIN LIMITATION: Resend in sandbox mode ONLY delivers emails to the verified account owner. In production, custom domain verification (SPF, DKIM, DMARC) is mandatory.'
+      );
+    }
+  }, [isDomainVerified]);
 
+  // Fetch outbox via SECURITY DEFINER RPC list_notifications
   const fetchOutbox = useCallback(async () => {
     setIsLoading(true);
     try {
-      let query = supabase
-        .from('notifications_outbox')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      const { data, error } = await supabase.rpc('list_notifications', {
+        p_status: filterStatus === 'all' ? null : filterStatus,
+        p_limit: 100,
+        p_offset: 0,
+      });
 
-      if (filterStatus !== 'all') {
-        query = query.eq('status', filterStatus);
-      }
-
-      const { data, error } = await query;
       if (error) {
         console.error('Error fetching outbox:', error);
-        showToast('Failed to load notifications outbox', 'error');
+        showToast('Failed to load notifications via RPC', 'error');
       } else {
         setOutbox((data as OutboxItem[]) || []);
       }
@@ -86,10 +117,43 @@ export const NotificationManager: React.FC = () => {
     }
   }, [filterStatus, showToast]);
 
+  // Load notification settings from payment_settings
+  const fetchSettings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_settings')
+        .select('admin_notification_emails, reminder_hours_before_deadline, notification_type_toggles')
+        .single();
+
+      if (data && !error) {
+        setSettings({
+          admin_notification_emails: data.admin_notification_emails || ['orders@nirai.in'],
+          reminder_hours_before_deadline: data.reminder_hours_before_deadline || 4,
+          notification_type_toggles: data.notification_type_toggles || {
+            order_placed: true,
+            payment_proof_received: true,
+            payment_verified: true,
+            payment_rejected: true,
+            payment_reminder: true,
+            order_expired: true,
+            shipped: true,
+            delivered: true,
+            cancelled: true,
+            admin_payment_pending: true,
+          },
+        });
+      }
+    } catch (err) {
+      console.error('Error loading notification settings:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchOutbox();
-  }, [fetchOutbox]);
+    fetchSettings();
+  }, [fetchOutbox, fetchSettings]);
 
+  // Manual Trigger Dispatch
   const handleDispatchNow = async () => {
     setIsDispatching(true);
     try {
@@ -103,7 +167,7 @@ export const NotificationManager: React.FC = () => {
         showToast(`Dispatch failed: ${error.message}`, 'error');
       } else {
         showToast(
-          `Dispatch completed: ${data.sent_count ?? 0} sent, ${data.failed_count ?? 0} failed (${data.processed_count ?? 0} processed)`,
+          `Dispatch completed: ${data.sent_count ?? 0} sent, ${data.failed_count ?? 0} failed (${data.processed_count ?? 0} claimed)`,
           'success'
         );
         fetchOutbox();
@@ -115,17 +179,12 @@ export const NotificationManager: React.FC = () => {
     }
   };
 
+  // Requirement 1 & 5: Retry failed row via RPC retry_notification
   const handleRetryNotification = async (item: OutboxItem) => {
     try {
-      const { error } = await supabase
-        .from('notifications_outbox')
-        .update({
-          status: 'pending',
-          error_message: null,
-          attempts: 0,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', item.id);
+      const { data, error } = await supabase.rpc('retry_notification', {
+        p_id: item.id,
+      });
 
       if (error) {
         showToast(`Retry failed: ${error.message}`, 'error');
@@ -138,6 +197,66 @@ export const NotificationManager: React.FC = () => {
     }
   };
 
+  // Save Settings to payment_settings
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const { error } = await supabase
+        .from('payment_settings')
+        .update({
+          admin_notification_emails: settings.admin_notification_emails,
+          reminder_hours_before_deadline: settings.reminder_hours_before_deadline,
+          notification_type_toggles: settings.notification_type_toggles,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'default');
+
+      if (error) {
+        showToast(`Failed to save settings: ${error.message}`, 'error');
+      } else {
+        showToast('Notification settings updated successfully', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error saving settings', 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleAddAdminEmail = () => {
+    const email = newAdminEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      showToast('Please enter a valid email address', 'error');
+      return;
+    }
+    if (settings.admin_notification_emails.includes(email)) {
+      showToast('Email already in recipient list', 'error');
+      return;
+    }
+    setSettings((prev) => ({
+      ...prev,
+      admin_notification_emails: [...prev.admin_notification_emails, email],
+    }));
+    setNewAdminEmail('');
+  };
+
+  const handleRemoveAdminEmail = (email: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      admin_notification_emails: prev.admin_notification_emails.filter((e) => e !== email),
+    }));
+  };
+
+  const handleToggleType = (type: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      notification_type_toggles: {
+        ...prev.notification_type_toggles,
+        [type]: !prev.notification_type_toggles[type],
+      },
+    }));
+  };
+
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -145,7 +264,6 @@ export const NotificationManager: React.FC = () => {
     showToast('Copied to clipboard', 'success');
   };
 
-  // Mask recipient email for UI privacy (Requirement C)
   const maskEmail = (email: string) => {
     if (!email) return 'N/A';
     const parts = email.split('@');
@@ -159,15 +277,28 @@ export const NotificationManager: React.FC = () => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      item.order_number.toLowerCase().includes(q) ||
-      item.event_type.toLowerCase().includes(q) ||
-      item.subject.toLowerCase().includes(q)
+      item.order_number?.toLowerCase().includes(q) ||
+      item.type?.toLowerCase().includes(q) ||
+      (item.to_email && item.to_email.toLowerCase().includes(q))
     );
   });
 
   const pendingCount = outbox.filter((i) => i.status === 'pending').length;
   const sentCount = outbox.filter((i) => i.status === 'sent').length;
   const failedCount = outbox.filter((i) => i.status === 'failed').length;
+
+  const NOTIFICATION_LABELS: Record<string, { label: string; desc: string }> = {
+    order_placed: { label: 'Order Placed', desc: 'Sent when customer places an order with Pay Now link' },
+    payment_proof_received: { label: 'Payment Proof Received', desc: 'Acknowledges UTR submission to customer' },
+    payment_verified: { label: 'Payment Verified', desc: 'Confirms payment and locks saree for packing' },
+    payment_rejected: { label: 'Payment Rejected', desc: 'Informs customer of rejection with resubmit link' },
+    payment_reminder: { label: 'Payment Reminder', desc: '4 hours before deadline for unpaid orders' },
+    order_expired: { label: 'Order Expired', desc: 'Informs customer when 24h payment window lapses' },
+    shipped: { label: 'Order Shipped', desc: 'Courier AWB and tracking link' },
+    delivered: { label: 'Order Delivered', desc: 'Delivery acknowledgement and care instructions' },
+    cancelled: { label: 'Order Cancelled', desc: 'Order cancellation confirmation' },
+    admin_payment_pending: { label: 'Admin Payment Alert', desc: 'Alerts store owner of new UTR awaiting review' },
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
@@ -189,7 +320,7 @@ export const NotificationManager: React.FC = () => {
           <button
             onClick={fetchOutbox}
             disabled={isLoading}
-            className="flex items-center gap-2 px-3 py-2 text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 text-sm font-medium transition shadow-sm"
+            className="flex items-center gap-2 px-3 py-2 text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 text-sm font-medium transition shadow-sm cursor-pointer"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
@@ -197,7 +328,7 @@ export const NotificationManager: React.FC = () => {
           <button
             onClick={handleDispatchNow}
             disabled={isDispatching}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-900 text-white rounded-lg hover:bg-amber-800 text-sm font-medium transition shadow-sm disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-amber-900 text-white rounded-lg hover:bg-amber-800 text-sm font-medium transition shadow-sm disabled:opacity-50 cursor-pointer"
           >
             <Send className={`w-4 h-4 ${isDispatching ? 'animate-spin' : ''}`} />
             {isDispatching ? 'Dispatching...' : 'Dispatch Outbox Now'}
@@ -205,49 +336,51 @@ export const NotificationManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Requirement A: Prominent Resend Domain Verification Alert Banner */}
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-6 h-6 text-amber-700 flex-shrink-0 mt-0.5" />
-          <div className="space-y-2 flex-1">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h2 className="text-base font-bold text-amber-900">
-                CRITICAL PRE-LAUNCH REQUIREMENT: Resend Domain Verification
-              </h2>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-200 text-amber-900 self-start">
-                Sandbox Mode Active
-              </span>
-            </div>
-            <p className="text-sm text-amber-800 leading-relaxed">
-              Without a verified custom domain, Resend will <strong>only deliver emails to the account owner&apos;s registered email address</strong>. 
-              Real customer emails will fail with an HTTP 403 authorization error. Before launching to customers, you must add and verify 
-              <code className="mx-1 px-1.5 py-0.5 bg-amber-100 rounded text-amber-900 font-mono text-xs font-semibold">nirai.in</code> 
-              with SPF, DKIM, and DMARC DNS records in your domain registrar (GoDaddy, Cloudflare, etc.).
-            </p>
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                onClick={() => setActiveTab('dns_guide')}
-                className="text-xs font-semibold text-amber-950 underline hover:text-amber-800 flex items-center gap-1"
-              >
-                View DNS Verification Setup Guide <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-amber-300">|</span>
-              <button
-                onClick={() => setActiveTab('smtp_guide')}
-                className="text-xs font-semibold text-amber-950 underline hover:text-amber-800 flex items-center gap-1"
-              >
-                Supabase Auth Custom SMTP Guide &amp; Tamil Templates <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+      {/* Requirement 6: Prominent Resend Domain Verification Warning Banner when not verified */}
+      {!isDomainVerified && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-amber-700 flex-shrink-0 mt-0.5" />
+            <div className="space-y-2 flex-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-amber-900">
+                  CRITICAL PRE-LAUNCH REQUIREMENT: Resend Domain Verification
+                </h2>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-200 text-amber-900 self-start">
+                  Sandbox Mode Active
+                </span>
+              </div>
+              <p className="text-sm text-amber-800 leading-relaxed">
+                Without a verified custom domain, Resend will <strong>only deliver emails to the account owner&apos;s registered email address</strong>. 
+                Real customer emails will fail with an HTTP 403 authorization error. Before opening the store to customers, you must add and verify 
+                <code className="mx-1 px-1.5 py-0.5 bg-amber-100 rounded text-amber-900 font-mono text-xs font-semibold">nirai.in</code> 
+                with SPF, DKIM, and DMARC DNS records in your domain registrar.
+              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  onClick={() => setActiveTab('dns_guide')}
+                  className="text-xs font-semibold text-amber-950 underline hover:text-amber-800 flex items-center gap-1 cursor-pointer"
+                >
+                  View DNS Verification Setup Guide <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-amber-300">|</span>
+                <button
+                  onClick={() => setActiveTab('smtp_guide')}
+                  className="text-xs font-semibold text-amber-950 underline hover:text-amber-800 flex items-center gap-1 cursor-pointer"
+                >
+                  Supabase Auth Custom SMTP Guide &amp; Tamil Templates <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-stone-200">
+      <div className="flex border-b border-stone-200 overflow-x-auto">
         <button
           onClick={() => setActiveTab('outbox')}
-          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${
             activeTab === 'outbox'
               ? 'border-amber-900 text-amber-900 font-semibold'
               : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -257,8 +390,19 @@ export const NotificationManager: React.FC = () => {
           Outbox Queue ({outbox.length})
         </button>
         <button
+          onClick={() => setActiveTab('settings')}
+          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'settings'
+              ? 'border-amber-900 text-amber-900 font-semibold'
+              : 'border-transparent text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          Settings &amp; Preferences
+        </button>
+        <button
           onClick={() => setActiveTab('dns_guide')}
-          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${
             activeTab === 'dns_guide'
               ? 'border-amber-900 text-amber-900 font-semibold'
               : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -269,7 +413,7 @@ export const NotificationManager: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('smtp_guide')}
-          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+          className={`py-3 px-5 text-sm font-medium border-b-2 flex items-center gap-2 transition whitespace-nowrap cursor-pointer ${
             activeTab === 'smtp_guide'
               ? 'border-amber-900 text-amber-900 font-semibold'
               : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -324,7 +468,7 @@ export const NotificationManager: React.FC = () => {
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search order number or subject..."
+                placeholder="Search order number or type..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 border border-stone-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-amber-900"
@@ -337,7 +481,7 @@ export const NotificationManager: React.FC = () => {
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition cursor-pointer ${
                     filterStatus === status
                       ? 'bg-amber-900 text-white'
                       : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -356,11 +500,12 @@ export const NotificationManager: React.FC = () => {
                 <thead>
                   <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 text-xs uppercase tracking-wider">
                     <th className="py-3 px-4 font-semibold">Order / Reference</th>
-                    <th className="py-3 px-4 font-semibold">Event Type</th>
+                    <th className="py-3 px-4 font-semibold">Type</th>
                     <th className="py-3 px-4 font-semibold">Recipient (Masked)</th>
-                    <th className="py-3 px-4 font-semibold">Subject</th>
+                    <th className="py-3 px-4 font-semibold">Locale</th>
                     <th className="py-3 px-4 font-semibold">Status</th>
                     <th className="py-3 px-4 font-semibold">Attempts</th>
+                    <th className="py-3 px-4 font-semibold">Next Attempt</th>
                     <th className="py-3 px-4 font-semibold">Queued At</th>
                     <th className="py-3 px-4 font-semibold text-right">Actions</th>
                   </tr>
@@ -368,7 +513,7 @@ export const NotificationManager: React.FC = () => {
                 <tbody className="divide-y divide-stone-100 text-sm">
                   {filteredOutbox.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-stone-400">
+                      <td colSpan={9} className="py-12 text-center text-stone-400">
                         {isLoading ? 'Loading outbox notifications...' : 'No notifications found in the outbox queue.'}
                       </td>
                     </tr>
@@ -385,14 +530,14 @@ export const NotificationManager: React.FC = () => {
                         </td>
                         <td className="py-3 px-4">
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-stone-100 text-stone-700">
-                            {item.event_type}
+                            {item.type}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-xs font-mono text-stone-600">
-                          {maskEmail(item.recipient_email)}
+                          {maskEmail(item.to_email)}
                         </td>
-                        <td className="py-3 px-4 text-xs text-stone-700 max-w-xs truncate" title={item.subject}>
-                          {item.subject}
+                        <td className="py-3 px-4 text-xs uppercase font-mono text-stone-500">
+                          {item.locale || 'en'}
                         </td>
                         <td className="py-3 px-4">
                           {item.status === 'sent' && (
@@ -406,13 +551,18 @@ export const NotificationManager: React.FC = () => {
                             </span>
                           )}
                           {item.status === 'failed' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800" title={item.error_message || ''}>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800" title={item.last_error || ''}>
                               <XCircle className="w-3.5 h-3.5" /> Failed
                             </span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-xs text-stone-600 font-mono">
-                          {item.attempts}
+                          {item.attempts} / 5
+                        </td>
+                        <td className="py-3 px-4 text-xs text-stone-500 whitespace-nowrap">
+                          {item.next_attempt_at
+                            ? new Date(item.next_attempt_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : '—'}
                         </td>
                         <td className="py-3 px-4 text-xs text-stone-500 whitespace-nowrap">
                           {new Date(item.created_at).toLocaleString([], {
@@ -426,7 +576,7 @@ export const NotificationManager: React.FC = () => {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => setSelectedItem(item)}
-                              className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded transition"
+                              className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded transition cursor-pointer"
                               title="View details"
                             >
                               <Info className="w-4 h-4" />
@@ -434,7 +584,7 @@ export const NotificationManager: React.FC = () => {
                             {item.status === 'failed' && (
                               <button
                                 onClick={() => handleRetryNotification(item)}
-                                className="px-2.5 py-1 text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded transition"
+                                className="px-2.5 py-1 text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded transition cursor-pointer"
                               >
                                 Retry
                               </button>
@@ -451,7 +601,147 @@ export const NotificationManager: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Domain DNS Setup Guide (SPF / DKIM / DMARC) */}
+      {/* Tab 2: Settings > Notifications (Requirement 5) */}
+      {activeTab === 'settings' && (
+        <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-6 space-y-8">
+          <div>
+            <h2 className="text-xl font-bold font-serif text-stone-900">
+              Notification Preferences &amp; Administration
+            </h2>
+            <p className="text-stone-500 text-sm mt-1">
+              Configure recipient email lists for administrative verification alerts, reminder intervals, and per-type toggle switches.
+            </p>
+          </div>
+
+          {/* Admin Email List */}
+          <div className="space-y-3 border-t border-stone-100 pt-6">
+            <label className="block text-sm font-bold text-stone-900">
+              Admin Notification Recipient List (New Payment Proof Alerts)
+            </label>
+            <p className="text-xs text-stone-500">
+              When a customer submits an offline UPI/Bank payment proof, alerts are dispatched to these administrator email addresses.
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {settings.admin_notification_emails.map((email) => (
+                <span
+                  key={email}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-medium text-amber-950"
+                >
+                  {email}
+                  {settings.admin_notification_emails.length > 1 && (
+                    <button
+                      onClick={() => handleRemoveAdminEmail(email)}
+                      className="hover:text-rose-600 transition p-0.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 max-w-md pt-2">
+              <input
+                type="email"
+                placeholder="add.admin@nirai.in"
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-amber-900"
+              />
+              <button
+                type="button"
+                onClick={handleAddAdminEmail}
+                className="flex items-center gap-1 px-3 py-2 bg-stone-900 text-white rounded-lg text-xs font-semibold hover:bg-stone-800 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+          </div>
+
+          {/* Payment Deadline Reminders */}
+          <div className="space-y-3 border-t border-stone-100 pt-6">
+            <label className="block text-sm font-bold text-stone-900">
+              Payment Expiration Reminder Threshold
+            </label>
+            <p className="text-xs text-stone-500">
+              Automated reminders are sent to customers for unpaid orders nearing their reservation deadline.
+            </p>
+            <div className="flex items-center gap-3 max-w-xs">
+              <input
+                type="number"
+                min="1"
+                max="24"
+                value={settings.reminder_hours_before_deadline}
+                onChange={(e) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    reminder_hours_before_deadline: Math.max(1, parseInt(e.target.value) || 4),
+                  }))
+                }
+                className="w-24 px-3 py-2 border border-stone-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-900"
+              />
+              <span className="text-xs text-stone-600 font-medium">Hours before order expiration (Default: 4 hours)</span>
+            </div>
+          </div>
+
+          {/* Per-Type Notification Toggles */}
+          <div className="space-y-4 border-t border-stone-100 pt-6">
+            <div>
+              <label className="block text-sm font-bold text-stone-900">
+                Notification Type Toggles
+              </label>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Enable or disable automated outbox enqueuing for specific customer lifecycle events.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(NOTIFICATION_LABELS).map(([typeKey, meta]) => {
+                const isEnabled = settings.notification_type_toggles[typeKey] ?? true;
+                return (
+                  <div
+                    key={typeKey}
+                    onClick={() => handleToggleType(typeKey)}
+                    className={`p-3.5 rounded-lg border flex items-center justify-between cursor-pointer transition ${
+                      isEnabled ? 'bg-stone-50/70 border-stone-300' : 'bg-stone-100/40 border-stone-200 opacity-60'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-stone-900">{meta.label}</p>
+                      <p className="text-[11px] text-stone-500">{meta.desc}</p>
+                    </div>
+                    <div
+                      className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors ${
+                        isEnabled ? 'bg-amber-900' : 'bg-stone-300'
+                      }`}
+                    >
+                      <div
+                        className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                          isEnabled ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Save Action */}
+          <div className="border-t border-stone-100 pt-6 flex justify-end">
+            <button
+              onClick={handleSaveSettings}
+              disabled={isSavingSettings}
+              className="px-6 py-2.5 bg-amber-900 hover:bg-amber-800 text-white text-xs font-bold rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer"
+            >
+              {isSavingSettings ? 'Saving Settings...' : 'Save Notification Preferences'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Domain DNS Setup Guide */}
       {activeTab === 'dns_guide' && (
         <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-6 space-y-6">
           <div className="border-b border-stone-100 pb-4">
@@ -459,7 +749,7 @@ export const NotificationManager: React.FC = () => {
               Domain DNS Records for Verified Email Delivery
             </h2>
             <p className="text-stone-500 text-sm mt-1">
-              Add the following DNS records to your domain DNS manager (Cloudflare, GoDaddy, Namecheap) to verify 
+              Add the following DNS records to your domain DNS manager to verify 
               <code className="mx-1 px-1.5 py-0.5 bg-stone-100 rounded text-stone-800 font-mono font-bold">nirai.in</code> in Resend.
             </p>
           </div>
@@ -488,7 +778,7 @@ export const NotificationManager: React.FC = () => {
                   </div>
                   <button
                     onClick={() => copyToClipboard('v=spf1 include:resend.com ~all', 'spf')}
-                    className="p-1 hover:bg-stone-100 rounded text-stone-500"
+                    className="p-1 hover:bg-stone-100 rounded text-stone-500 cursor-pointer"
                   >
                     {copiedKey === 'spf' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                   </button>
@@ -521,7 +811,7 @@ export const NotificationManager: React.FC = () => {
                     href="https://resend.com/domains"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-amber-900 text-xs font-sans font-semibold flex items-center gap-1 hover:underline"
+                    className="text-amber-900 text-xs font-sans font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                   >
                     Open Resend <ExternalLink className="w-3.5 h-3.5" />
                   </a>
@@ -552,7 +842,7 @@ export const NotificationManager: React.FC = () => {
                   </div>
                   <button
                     onClick={() => copyToClipboard('v=DMARC1; p=none; rua=mailto:postmaster@nirai.in', 'dmarc')}
-                    className="p-1 hover:bg-stone-100 rounded text-stone-500"
+                    className="p-1 hover:bg-stone-100 rounded text-stone-500 cursor-pointer"
                   >
                     {copiedKey === 'dmarc' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                   </button>
@@ -560,32 +850,10 @@ export const NotificationManager: React.FC = () => {
               </div>
             </div>
           </div>
-
-          {/* Configurable FROM Email */}
-          <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-4 space-y-2">
-            <h3 className="text-sm font-bold text-amber-900">Setting Configurable FROM Address (NOTIFY_FROM_EMAIL)</h3>
-            <p className="text-xs text-amber-800 leading-relaxed">
-              Once your domain is verified, set the sender address in your Supabase Edge Function secrets via CLI:
-            </p>
-            <div className="bg-stone-900 text-stone-100 p-3 rounded font-mono text-xs flex items-center justify-between">
-              <code>supabase secrets set NOTIFY_FROM_EMAIL=&quot;Nirai Handlooms &lt;orders@nirai.in&gt;&quot;</code>
-              <button
-                onClick={() =>
-                  copyToClipboard(
-                    'supabase secrets set NOTIFY_FROM_EMAIL="Nirai Handlooms <orders@nirai.in>"',
-                    'secrets'
-                  )
-                }
-                className="text-stone-400 hover:text-white p-1"
-              >
-                {copiedKey === 'secrets' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Tab 3: Supabase Auth Custom SMTP & Bilingual Templates (Requirement B) */}
+      {/* Tab 4: Supabase Auth Custom SMTP (Requirement 4) */}
       {activeTab === 'smtp_guide' && (
         <div className="bg-white rounded-xl border border-stone-200 shadow-sm p-6 space-y-6">
           <div className="border-b border-stone-100 pb-4">
@@ -638,7 +906,7 @@ export const NotificationManager: React.FC = () => {
               </h3>
               <button
                 onClick={() => setSelectedItem(null)}
-                className="text-stone-400 hover:text-stone-600 p-1 rounded"
+                className="text-stone-400 hover:text-stone-600 p-1 rounded cursor-pointer"
               >
                 ✕
               </button>
@@ -647,8 +915,8 @@ export const NotificationManager: React.FC = () => {
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-2 bg-stone-50 p-3 rounded border border-stone-200">
                 <div>
-                  <span className="text-stone-400 block">Event Type:</span>
-                  <span className="font-mono font-semibold text-stone-800">{selectedItem.event_type}</span>
+                  <span className="text-stone-400 block">Type:</span>
+                  <span className="font-mono font-semibold text-stone-800">{selectedItem.type}</span>
                 </div>
                 <div>
                   <span className="text-stone-400 block">Status:</span>
@@ -656,26 +924,29 @@ export const NotificationManager: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-stone-400 block">Recipient (Masked):</span>
-                  <span className="font-mono text-stone-800">{maskEmail(selectedItem.recipient_email)}</span>
+                  <span className="font-mono text-stone-800">{maskEmail(selectedItem.to_email)}</span>
                 </div>
                 <div>
                   <span className="text-stone-400 block">Attempts:</span>
-                  <span className="font-mono text-stone-800">{selectedItem.attempts}</span>
+                  <span className="font-mono text-stone-800">{selectedItem.attempts} / 5</span>
+                </div>
+                <div>
+                  <span className="text-stone-400 block">Locale:</span>
+                  <span className="font-mono text-stone-800 uppercase">{selectedItem.locale}</span>
+                </div>
+                <div>
+                  <span className="text-stone-400 block">Next Attempt At:</span>
+                  <span className="font-mono text-stone-800">
+                    {selectedItem.next_attempt_at ? new Date(selectedItem.next_attempt_at).toLocaleTimeString() : 'None'}
+                  </span>
                 </div>
               </div>
 
-              <div>
-                <span className="text-stone-500 font-semibold block mb-1">Subject:</span>
-                <p className="p-2.5 bg-stone-50 border border-stone-200 rounded font-medium text-stone-800">
-                  {selectedItem.subject}
-                </p>
-              </div>
-
-              {selectedItem.error_message && (
+              {selectedItem.last_error && (
                 <div>
                   <span className="text-rose-600 font-semibold block mb-1">Last Error Message:</span>
                   <p className="p-2.5 bg-rose-50 border border-rose-200 rounded font-mono text-rose-800">
-                    {selectedItem.error_message}
+                    {selectedItem.last_error}
                   </p>
                 </div>
               )}
@@ -695,14 +966,14 @@ export const NotificationManager: React.FC = () => {
                     handleRetryNotification(selectedItem);
                     setSelectedItem(null);
                   }}
-                  className="px-4 py-2 bg-amber-900 text-white rounded text-xs font-semibold hover:bg-amber-800"
+                  className="px-4 py-2 bg-amber-900 text-white rounded text-xs font-semibold hover:bg-amber-800 cursor-pointer"
                 >
                   Retry Sending
                 </button>
               )}
               <button
                 onClick={() => setSelectedItem(null)}
-                className="px-4 py-2 bg-stone-100 text-stone-700 rounded text-xs font-semibold hover:bg-stone-200"
+                className="px-4 py-2 bg-stone-100 text-stone-700 rounded text-xs font-semibold hover:bg-stone-200 cursor-pointer"
               >
                 Close
               </button>
