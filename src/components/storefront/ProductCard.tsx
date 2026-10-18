@@ -33,6 +33,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           src={primaryImage}
           alt={product.nameEn}
           fallbackText={product.nameEn}
+          cldWidth={480}
+          cldHeight={640}
+          cldCrop="fill"
+          responsive={true}
           className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-103"
         />
 

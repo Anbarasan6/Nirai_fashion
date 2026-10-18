@@ -191,6 +191,9 @@ export const ProductDetailPage: React.FC = () => {
                     <ImageWithFallback
                       src={img}
                       alt={`${product.nameEn} thumbnail ${idx + 1}`}
+                      cldWidth={120}
+                      cldHeight={160}
+                      cldCrop="fill"
                       className="w-full h-full object-cover object-top"
                     />
                   </button>
@@ -204,6 +207,11 @@ export const ProductDetailPage: React.FC = () => {
                 src={product.images[selectedImageIdx] || product.images[0]}
                 alt={displayName}
                 fallbackText={displayName}
+                cldWidth={900}
+                cldHeight={1200}
+                cldCrop="fill"
+                responsive={true}
+                priority={true}
                 className="w-full h-full object-cover object-top"
               />
 

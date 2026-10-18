@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { Category } from '../../types';
+import { ImageWithFallback } from '../common/ImageWithFallback';
 import { ChevronLeft, ChevronRight, ArrowUpRight } from 'lucide-react';
 
 export const CategorySection: React.FC = () => {
@@ -106,10 +107,13 @@ export const CategorySection: React.FC = () => {
                 className="group relative flex-none w-[220px] sm:w-[240px] md:w-[270px] lg:w-[280px] aspect-[4/5] rounded-xl overflow-hidden bg-stone-100 border border-[#E5DFD3] hover:border-amber-800 shadow-2xs hover:shadow-md transition-all cursor-pointer"
               >
                 {/* 4:5 Image */}
-                <img
+                <ImageWithFallback
                   src={cat.image}
                   alt={cat.nameEn}
-                  loading="lazy"
+                  fallbackText={cat.nameEn}
+                  cldWidth={360}
+                  cldHeight={450}
+                  cldCrop="fill"
                   className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 ease-out"
                 />
 
