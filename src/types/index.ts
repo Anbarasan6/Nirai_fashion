@@ -58,11 +58,22 @@ export interface ProductVariant {
 export interface ProductReview {
   id: string;
   productId: string;
+  userId?: string;
   customerName: string;
   rating: number; // 1 - 5
+  title?: string;
   comment: string;
   date: string;
   verifiedPurchase: boolean;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  error?: string | null;
 }
 
 export interface Product {
@@ -114,9 +125,93 @@ export type OrderStatus =
   | 'Cancelled'
   | 'Returned';
 
-export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'PENDING_VERIFICATION';
+export type PaymentStatus =
+  | 'Awaiting Payment'
+  | 'Verification Pending'
+  | 'Paid'
+  | 'Rejected'
+  | 'Expired'
+  | 'Refunded'
+  | 'Pending'
+  | 'PENDING_VERIFICATION'
+  | 'Failed';
 
-export type PaymentMethod = 'ONLINE_UPI' | 'ONLINE_CARD' | 'BANK_TRANSFER';
+export type PaymentMethod = 'ONLINE_UPI' | 'BANK_TRANSFER' | 'COD' | 'ONLINE_CARD';
+
+export interface PaymentSettings {
+  id: string;
+  upiId: string;
+  payeeName: string;
+  accountName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName: string;
+  branch: string;
+  qrImagePath?: string | null;
+  paymentDeadlineHours: number;
+  codEnabled: boolean;
+  instructionsEn?: string;
+  instructionsTa?: string;
+  updatedAt?: string;
+}
+
+export interface PaymentSubmission {
+  id: string;
+  orderId: string;
+  utr: string;
+  amountPaid: number;
+  paidAt: string;
+  payerName: string;
+  method: 'upi' | 'bank_transfer' | 'qr' | 'cash';
+  screenshotPath?: string | null;
+  status: 'submitted' | 'verified' | 'rejected';
+  rejectReason?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  createdAt: string;
+}
+
+export interface PaymentInstructions {
+  success: boolean;
+  error?: string;
+  order_id: string;
+  order_number: string;
+  customer_name: string;
+  customer_phone: string;
+  amount_due: number;
+  order_status: string;
+  payment_status: PaymentStatus;
+  payment_method: string;
+  payment_due_at: string;
+  payment_deadline_hours: number;
+  is_expired: boolean;
+  upi_details: {
+    upi_id: string;
+    payee_name: string;
+    qr_image_path?: string | null;
+  };
+  bank_details: {
+    account_name: string;
+    account_number: string;
+    ifsc_code: string;
+    bank_name: string;
+    branch: string;
+  };
+  cod_enabled: boolean;
+  instructions: {
+    en: string;
+    ta: string;
+  };
+  latest_submission?: {
+    id: string;
+    utr: string;
+    amount_paid: number;
+    method: string;
+    status: 'submitted' | 'verified' | 'rejected';
+    reject_reason?: string | null;
+    created_at: string;
+  } | null;
+}
 
 export interface BankDetails {
   bankName: string;
@@ -214,6 +309,9 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
+  paymentDueAt?: string;
+  paymentSubmissions?: PaymentSubmission[];
+  paymentDetails?: Record<string, any>;
   utrNumber?: string;
   paymentProofUrl?: string;
   shippingDetails?: ShippingDetails;
@@ -228,6 +326,76 @@ export interface CartItem {
   quantity: number;
   product: Product;
   selectedVariant: ProductVariant;
+}
+
+export interface CartQuoteItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  sku: string;
+  variantId?: string | null;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+  inStock: boolean;
+  availableStock: number;
+}
+
+export interface CartQuote {
+  success: boolean;
+  error?: string;
+  items: CartQuoteItem[];
+  subtotal: number;
+  shippingFee: number;
+  freeShippingApplied: boolean;
+  freeShippingThreshold: number;
+  discount: number;
+  coupon?: {
+    code: string;
+    isValid: boolean;
+    discount: number;
+    error?: string | null;
+  };
+  taxAmount: number;
+  taxIncluded: boolean;
+  grandTotal: number;
+}
+
+export interface PlaceOrderPayload {
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  shipping_address: Address;
+  items: Array<{
+    productId: string;
+    variantId?: string | null;
+    quantity: number;
+  }>;
+  coupon_code?: string;
+  payment_method?: PaymentMethod;
+  utr_number?: string;
+  payment_proof_url?: string;
+  idempotency_key?: string;
+}
+
+export interface TrackingResult {
+  success: boolean;
+  order_number: string;
+  status: OrderStatus;
+  payment_status: PaymentStatus;
+  payment_method: PaymentMethod;
+  shipping_details?: ShippingDetails;
+  items: Array<{
+    productName: string;
+    productImage?: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+  item_count: number;
+  grand_total: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Supplier {
@@ -263,7 +431,7 @@ export interface StockMovement {
   productId: string;
   productName: string;
   sku: string;
-  type: 'RECEIPT' | 'SALE' | 'ADJUSTMENT' | 'DAMAGE' | 'RETURN';
+  type: 'RECEIPT' | 'SALE' | 'ADJUSTMENT' | 'DAMAGE' | 'RETURN' | 'RESTOCK' | 'DISPATCH';
   quantityDelta: number; // positive or negative
   previousStock: number;
   newStock: number;
@@ -390,5 +558,8 @@ export interface StoreSettings {
   supportPhone: string;
   supportEmail: string;
   isAnnouncementActive: boolean;
+  checkoutEnabled?: boolean;
+  maintenanceMessageEn?: string;
+  maintenanceMessageTa?: string;
   footerConfig?: FooterConfig;
 }

@@ -1,6 +1,7 @@
 import { MediaItem } from '../types';
 import { StorageService } from './storage';
 import { uploadToCloudinary } from './cloudinary';
+import { compressImage, cldUrl } from '../utils/cloudinary';
 
 export interface UploadOptions {
   category?: MediaItem['category'];
@@ -30,7 +31,7 @@ export const RECOMMENDED_DIMENSIONS: Record<string, { width: number; height: num
 
 /**
  * Optimizes, compresses and stores an image into Cloudinary CDN.
- * Falls back gracefully to optimized data URL if network error occurs.
+ * Performs client-side image downscaling and compression before upload.
  */
 export async function processAndUploadImage(
   file: File,
@@ -50,14 +51,17 @@ export async function processAndUploadImage(
     throw new Error('Unsupported image format. Please upload JPG, PNG, WebP, or SVG.');
   }
 
+  // Client-side image downscale / compress to ~1600px / 0.8 quality before network dispatch
+  const optimizedFile = await compressImage(file, 1600, 1600, 0.8);
+
   try {
-    const result = await uploadToCloudinary(file, `nirai/${category}`, options.onProgress);
+    const result = await uploadToCloudinary(optimizedFile, `nirai/${category}`, options.onProgress);
     const mediaItem: MediaItem = {
       id: `med-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       url: result.secureUrl || result.url,
       publicId: result.publicId,
       filename: file.name,
-      fileSize: result.bytes || file.size,
+      fileSize: result.bytes || optimizedFile.size,
       width: result.width || 800,
       height: result.height || 1000,
       format: (result.format || file.type.split('/')[1] || 'webp') as any,
@@ -81,19 +85,9 @@ export function getOptimizedImageUrl(
   options?: { width?: number; height?: number; quality?: number }
 ): string {
   if (!url) return '';
-  // If it's an Unsplash URL, apply optimal query params
-  if (url.includes('images.unsplash.com')) {
-    const base = url.split('?')[0];
-    const widthParam = options?.width ? `&w=${options.width}` : '&w=1200';
-    const heightParam = options?.height ? `&h=${options.height}&fit=crop` : '';
-    const qParam = options?.quality ? `&q=${options.quality}` : '&q=80';
-    return `${base}?auto=format${widthParam}${heightParam}${qParam}`;
-  }
-  // If it's Cloudinary, apply transformations if desired
-  if (url.includes('res.cloudinary.com')) {
-    if (options?.width) {
-      return url.replace('/upload/', `/upload/w_${options.width},c_limit,q_auto,f_auto/`);
-    }
-  }
-  return url;
+  return cldUrl(url, {
+    w: options?.width,
+    h: options?.height,
+    quality: options?.quality,
+  });
 }

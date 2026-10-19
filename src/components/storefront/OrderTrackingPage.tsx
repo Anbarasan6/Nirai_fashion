@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
-import { StorageService } from '../../services/storage';
-import { OrderStatus } from '../../types';
+import { trackOrderViaRpc } from '../../services/supabase';
+import { OrderStatus, TrackingResult } from '../../types';
 import { ImageWithFallback } from '../common/ImageWithFallback';
 import {
   Search,
   Package,
-  CheckCircle2,
   Clock,
   Truck,
   AlertCircle,
   ExternalLink,
-  ShieldCheck,
   Check,
+  Loader2,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface StepDef {
@@ -30,31 +31,63 @@ const STEPS: StepDef[] = [
 ];
 
 export const OrderTrackingPage: React.FC = () => {
-  const { language, t, trackingOrderId, setTrackingOrderId } = useShop();
-  const [searchInput, setSearchInput] = useState(trackingOrderId || 'NIRAI-2026-2052');
+  const { language, trackingOrderId, setTrackingOrderId, currentUser } = useShop();
+
+  const [orderNumberInput, setOrderNumberInput] = useState(trackingOrderId || '');
+  const [phoneInput, setPhoneInput] = useState(currentUser?.phone || '');
+  const [isLoading, setIsLoading] = useState(false);
+  const [trackingResult, setTrackingResult] = useState<TrackingResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     if (trackingOrderId) {
-      setSearchInput(trackingOrderId);
+      setOrderNumberInput(trackingOrderId);
     }
   }, [trackingOrderId]);
 
-  const orders = StorageService.getOrders();
-  const currentOrder = orders.find((o) => {
-    const q = searchInput.trim().toUpperCase();
-    return (
-      o.orderNumber.toUpperCase() === q ||
-      o.id.toUpperCase() === q ||
-      (o.utrNumber && o.utrNumber.toUpperCase() === q) ||
-      (o.customerPhone && o.customerPhone.replace(/\D/g, '').includes(q.replace(/\D/g, '')))
-    );
-  });
+  // Execute server RPC tracking
+  const performTrack = async (orderNum: string, phone: string) => {
+    const cleanOrderNum = orderNum.trim().toUpperCase();
+    const cleanPhone = phone.trim().replace(/\D/g, '');
+
+    if (!cleanOrderNum) {
+      setErrorMessage('Please enter your Nirai Order Number (e.g. NIRAI-2026-01002)');
+      return;
+    }
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      setErrorMessage('Please enter the 10-digit mobile number used when placing the order.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setHasSearched(true);
+
+    try {
+      const res = await trackOrderViaRpc(cleanOrderNum, cleanPhone);
+      setIsLoading(false);
+      if (res.success && res.data) {
+        setTrackingResult(res.data);
+        setErrorMessage(null);
+        if (cleanOrderNum !== trackingOrderId) {
+          setTrackingOrderId(cleanOrderNum);
+        }
+      } else {
+        setTrackingResult(null);
+        setErrorMessage(res.error || 'No matching order found for this order number and phone.');
+      }
+    } catch (err: any) {
+      setIsLoading(false);
+      setTrackingResult(null);
+      setErrorMessage(err.message || 'Tracking service temporarily unavailable. Please try again.');
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchInput.trim()) {
-      setTrackingOrderId(searchInput.trim());
-    }
+    performTrack(orderNumberInput, phoneInput);
   };
 
   // Determine active step index (0 to 4)
@@ -75,13 +108,12 @@ export const OrderTrackingPage: React.FC = () => {
     }
   };
 
-  const currentStatusIdx = currentOrder ? getActiveStepIdx(currentOrder.status) : 0;
+  const currentStatusIdx = trackingResult ? getActiveStepIdx(trackingResult.status) : 0;
 
-  // Format date cleanly e.g. 2/10/2026
   const formatDate = (dateStr: string) => {
     try {
       const d = new Date(dateStr);
-      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     } catch {
       return dateStr;
     }
@@ -99,60 +131,170 @@ export const OrderTrackingPage: React.FC = () => {
             Track Your Nirai Shipment
           </h1>
           <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
-            Enter your Nirai Order ID below to view live packaging, dispatch, and courier tracking details.
+            Enter your Nirai Order ID and the phone number provided at checkout to track real-time fulfillment and courier dispatch.
           </p>
         </div>
 
-        {/* Search Input Form */}
-        <form onSubmit={handleSearch} className="max-w-xl mx-auto mb-10 flex gap-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="e.g. NIRAI-2026-2052"
-              className="w-full text-xs py-3 pl-10 pr-4 bg-white border border-[#D5CEBF] rounded-xl focus:outline-none focus:border-amber-900 font-mono font-medium shadow-2xs uppercase tracking-wider"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-6 py-3 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl transition-colors cursor-pointer shadow-xs shrink-0"
-          >
-            Track Order
-          </button>
-        </form>
+        {/* Secure Tracking Input Form (Requires both Order Number AND Phone for privacy protection) */}
+        <div className="max-w-xl mx-auto mb-10 bg-white p-5 rounded-2xl border border-[#D5CEBF] shadow-2xs">
+          <form onSubmit={handleSearch} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Order Number *
+                </label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={orderNumberInput}
+                    onChange={(e) => setOrderNumberInput(e.target.value)}
+                    placeholder="NIRAI-2026-01002"
+                    className="w-full text-xs py-2.5 pl-9 pr-3 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-900 font-mono font-medium uppercase"
+                  />
+                </div>
+              </div>
 
-        {/* Order Details Display Card */}
-        {currentOrder ? (
+              <div>
+                <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Recipient Phone (10 Digits) *
+                </label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="9876543210"
+                  className="w-full text-xs py-2.5 px-3 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-900 font-mono font-medium"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                  <span>Verifying Shipment Records...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4" />
+                  <span>Track Live Order Status</span>
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* Error / Rate Limit Notice */}
+        {errorMessage && (
+          <div className="max-w-xl mx-auto mb-8 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-3 animate-in fade-in">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Tracking Notice</p>
+              <p className="mt-0.5 leading-relaxed">{errorMessage}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tracking Details Display */}
+        {trackingResult ? (
           <div className="bg-white rounded-2xl border border-[#E5DFD3] shadow-xs overflow-hidden animate-in fade-in duration-150">
-            {/* Header: Official Shipment Record & Status */}
+            {/* Header: Verified Record & Status */}
             <div className="p-6 bg-[#FAF8F5] border-b border-[#E5DFD3] flex flex-wrap items-center justify-between gap-4">
               <div>
-                <span className="text-[10px] uppercase tracking-widest text-amber-900 font-bold block mb-0.5">
-                  Official Shipment Record
+                <span className="text-[10px] uppercase tracking-widest text-emerald-800 font-bold block mb-0.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Verified Order Record</span>
                 </span>
                 <h3 className="font-serif text-2xl font-bold text-slate-900 font-mono tracking-tight">
-                  {currentOrder.orderNumber}
+                  {trackingResult.order_number}
                 </h3>
                 <span className="text-xs text-stone-500 block mt-1">
-                  Placed on: {formatDate(currentOrder.createdAt)}
+                  Placed on: {formatDate(trackingResult.created_at)}
                 </span>
               </div>
 
               <div className="flex items-center gap-4">
-                <span className="bg-amber-100/90 text-amber-900 border border-amber-300/80 px-3.5 py-1 rounded-md text-xs font-bold tracking-wide">
-                  {STEPS[currentStatusIdx]?.labelEn || currentOrder.status}
+                <span
+                  className={`px-3.5 py-1 rounded-md text-xs font-bold tracking-wide ${
+                    trackingResult.status === 'Delivered'
+                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      : trackingResult.status === 'Cancelled'
+                      ? 'bg-rose-100 text-rose-900 border border-rose-300'
+                      : 'bg-amber-100/90 text-amber-900 border border-amber-300/80'
+                  }`}
+                >
+                  {STEPS[currentStatusIdx]?.labelEn || trackingResult.status}
                 </span>
                 <span className="font-serif text-xl font-bold text-slate-900 tabular-nums">
-                  ₹{currentOrder.grandTotal.toLocaleString()}
+                  ₹{trackingResult.grand_total.toLocaleString()}
                 </span>
               </div>
             </div>
 
+            {/* Payment Status State Banner */}
+            {trackingResult.payment_status === 'Awaiting Payment' && trackingResult.status !== 'Cancelled' && (
+              <div className="p-4 bg-amber-50 border-b border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-amber-900">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-700" />
+                  <span>
+                    <strong>Payment Awaiting:</strong> Please complete your UPI or Bank Transfer to confirm this order.
+                  </span>
+                </div>
+                <Link
+                  to={`/pay/${trackingResult.order_number}`}
+                  className="px-4 py-1.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold rounded-lg shrink-0 text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Pay Now &amp; Submit Proof</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Verification Pending' && (
+              <div className="p-4 bg-blue-50 border-b border-blue-200 flex items-center gap-2.5 text-xs text-blue-900">
+                <Clock className="w-4 h-4 shrink-0 text-blue-700" />
+                <span>
+                  <strong>Payment Verification Pending:</strong> Your payment proof has been submitted. Our accounting team is manually verifying the transaction against bank statements (confirmed within 2–4 hours).
+                </span>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Rejected' && trackingResult.status !== 'Cancelled' && (
+              <div className="p-4 bg-rose-50 border-b border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-rose-900">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-700" />
+                  <span>
+                    <strong>Payment Rejected:</strong> Your last submission could not be verified against our bank statement.
+                  </span>
+                </div>
+                <Link
+                  to={`/pay/${trackingResult.order_number}`}
+                  className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-semibold rounded-lg shrink-0 text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Submit Proof Again</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            )}
+
+            {trackingResult.payment_status === 'Paid' && (
+              <div className="p-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2 text-xs text-emerald-900">
+                <Check className="w-4 h-4 shrink-0 text-emerald-700" />
+                <span>
+                  <strong>Payment Confirmed:</strong> Handloom attire is now reserved and being prepared for fulfillment.
+                </span>
+              </div>
+            )}
+
             {/* Stepper Timeline */}
             <div className="p-6 sm:p-8 border-b border-stone-100">
-              {currentOrder.status === 'Cancelled' ? (
+              {trackingResult.status === 'Cancelled' ? (
                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-3 text-xs text-rose-800 font-medium">
                   <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
                   <span>
@@ -199,80 +341,85 @@ export const OrderTrackingPage: React.FC = () => {
             </div>
 
             {/* Stage Progress Alert / Info Box */}
-            {currentOrder.status !== 'Shipped' && currentOrder.status !== 'Delivered' && currentOrder.status !== 'Cancelled' && (
-              <div className="p-4 bg-amber-50/60 border-b border-amber-200/80 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-amber-900 shrink-0 mt-0.5" />
-                <div className="text-xs space-y-1">
-                  <span className="font-serif font-bold text-amber-950 uppercase tracking-wider block">
-                    Tailoring &amp; Packaging Stage in Progress
-                  </span>
-                  <p className="text-stone-600 leading-relaxed text-[11px]">
-                    Your order is currently being quality checked, custom handloom finished, and packaged.{' '}
-                    <strong className="text-slate-800">
-                      Courier Partner name, AWB Tracking Number, and Live Tracking Link
-                    </strong>{' '}
-                    will be displayed here as soon as our admin hands over the shipment to the courier.
-                  </p>
+            {trackingResult.status !== 'Shipped' &&
+              trackingResult.status !== 'Delivered' &&
+              trackingResult.status !== 'Cancelled' && (
+                <div className="p-4 bg-amber-50/60 border-b border-amber-200/80 flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-amber-900 shrink-0 mt-0.5" />
+                  <div className="text-xs space-y-1">
+                    <span className="font-serif font-bold text-amber-950 uppercase tracking-wider block">
+                      Fulfillment in Progress
+                    </span>
+                    <p className="text-stone-600 leading-relaxed text-[11px]">
+                      Your apparel is undergoing handloom finishing and packaging. Courier partner details and AWB tracking link will appear below as soon as the package is dispatched.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Courier & Dispatch Tracking Card (when Shipped or Delivered) */}
-            {currentOrder.shippingDetails && (currentOrder.status === 'Shipped' || currentOrder.status === 'Delivered') && (
-              <div className="p-6 bg-[#FAF8F5] border-b border-[#E5DFD3] grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <span className="text-stone-400 block mb-0.5 font-medium">Assigned Courier</span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {currentOrder.shippingDetails.courierName}
-                  </span>
+            {trackingResult.shipping_details &&
+              (trackingResult.status === 'Shipped' || trackingResult.status === 'Delivered') && (
+                <div className="p-6 bg-[#FAF8F5] border-b border-[#E5DFD3] grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <span className="text-stone-400 block mb-0.5 font-medium">Assigned Courier</span>
+                    <span className="font-bold text-slate-900 text-sm">
+                      {trackingResult.shipping_details.courierName || 'Standard Express'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-stone-400 block mb-0.5 font-medium">AWB Tracking Number</span>
+                    <span className="font-mono font-bold text-amber-900 text-sm">
+                      {trackingResult.shipping_details.trackingId || 'Processing'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-stone-400 block mb-0.5 font-medium">Live Tracking</span>
+                    {trackingResult.shipping_details.trackingUrl ? (
+                      <a
+                        href={trackingResult.shipping_details.trackingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-amber-900 hover:text-amber-950 font-bold underline underline-offset-2 pt-0.5"
+                      >
+                        <span>Track on Courier Portal</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    ) : (
+                      <span className="text-stone-500">Updating shortly</span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-stone-400 block mb-0.5 font-medium">AWB Tracking Number</span>
-                  <span className="font-mono font-bold text-amber-900 text-sm">
-                    {currentOrder.shippingDetails.trackingId}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-stone-400 block mb-0.5 font-medium">Live Portal Tracking</span>
-                  <a
-                    href={currentOrder.shippingDetails.trackingUrl || '#'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-amber-900 hover:text-amber-950 font-bold underline underline-offset-2 pt-0.5"
-                  >
-                    <span>Track on Courier Portal</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              </div>
-            )}
+              )}
 
-            {/* Ordered Creations (Items List) */}
+            {/* Ordered Items Summary */}
             <div className="p-6 sm:p-8 space-y-4">
               <h4 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Ordered Creations ({currentOrder.items.length})
+                Order Items ({trackingResult.items?.length || trackingResult.item_count || 1})
               </h4>
               <div className="space-y-3">
-                {currentOrder.items.map((item, idx) => (
+                {(trackingResult.items || []).map((item, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs hover:border-amber-700/40 transition-colors"
+                    className="flex items-center justify-between p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs"
                   >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-14 h-16 rounded-lg overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
-                        <ImageWithFallback
-                          src={item.productImage}
-                          alt={item.productName}
-                          fallbackText={item.productName}
-                          className="w-full h-full object-cover object-top"
-                        />
-                      </div>
+                      {item.productImage && (
+                        <div className="w-14 h-16 rounded-lg overflow-hidden bg-stone-100 shrink-0 border border-stone-200">
+                          <ImageWithFallback
+                            src={item.productImage}
+                            alt={item.productName}
+                            fallbackText={item.productName}
+                            className="w-full h-full object-cover object-top"
+                          />
+                        </div>
+                      )}
                       <div>
                         <h5 className="font-serif text-xs font-bold text-slate-900 uppercase tracking-wide">
                           {item.productName}
                         </h5>
                         <p className="text-[11px] text-stone-500 mt-0.5">
-                          Qty: {item.quantity} · {item.size || item.variantName || 'Free Size (6.3m)'}
+                          Quantity: {item.quantity}
                         </p>
                       </div>
                     </div>
@@ -284,60 +431,37 @@ export const OrderTrackingPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Footer: Delivering To & Payment Summary */}
-            <div className="p-6 bg-[#FAF8F5] border-t border-[#E5DFD3] text-xs text-stone-600 flex flex-col sm:flex-row justify-between gap-6">
-              <div className="space-y-1 max-w-md">
-                <span className="font-bold text-slate-900 block text-xs">Delivering to:</span>
-                <p className="font-medium text-slate-800">
-                  {currentOrder.shippingAddress.fullName} ({currentOrder.shippingAddress.phone})
-                </p>
-                <p className="text-[11px] text-stone-600 leading-relaxed uppercase">
-                  {currentOrder.shippingAddress.street}, {currentOrder.shippingAddress.city},{' '}
-                  {currentOrder.shippingAddress.state}, India, {currentOrder.shippingAddress.state} -{' '}
-                  <span className="font-mono font-bold text-slate-800">
-                    {currentOrder.shippingAddress.pincode}
-                  </span>
-                </p>
+            {/* Footer Summary */}
+            <div className="p-6 bg-[#FAF8F5] border-t border-[#E5DFD3] text-xs text-stone-600 flex flex-col sm:flex-row justify-between gap-4">
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">Payment Method:</span>
+                <span className="font-medium text-slate-800">{trackingResult.payment_method}</span>
               </div>
-
-              <div className="sm:text-right space-y-1 shrink-0">
-                <span className="font-bold text-slate-900 block text-xs">Payment:</span>
-                <p className="font-medium text-slate-800">
-                  {currentOrder.paymentMethod === 'ONLINE_UPI'
-                    ? 'ONLINE_UPI'
-                    : currentOrder.paymentMethod === 'BANK_TRANSFER'
-                    ? 'BANK_TRANSFER'
-                    : currentOrder.paymentMethod}
-                  {' · '}
-                  <span
-                    className={`font-semibold ${
-                      currentOrder.paymentStatus === 'Paid'
-                        ? 'text-emerald-700'
-                        : 'text-amber-800'
-                    }`}
-                  >
-                    {currentOrder.paymentStatus}
-                  </span>
-                </p>
-                {currentOrder.utrNumber && (
-                  <p className="text-[10px] text-stone-500 font-mono">
-                    UTR: {currentOrder.utrNumber}
-                  </p>
-                )}
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">Payment Status:</span>
+                <span
+                  className={`font-semibold ${
+                    trackingResult.payment_status === 'Paid'
+                      ? 'text-emerald-700'
+                      : 'text-amber-800'
+                  }`}
+                >
+                  {trackingResult.payment_status}
+                </span>
               </div>
             </div>
           </div>
-        ) : (
+        ) : hasSearched && !isLoading ? (
           <div className="bg-white p-12 rounded-2xl border border-[#E5DFD3] text-center space-y-3">
             <Package className="w-12 h-12 text-stone-300 mx-auto" />
             <h3 className="font-serif text-base font-bold text-slate-800">
-              No order found matching &ldquo;{searchInput}&rdquo;
+              No order found matching your inquiry
             </h3>
             <p className="text-xs text-stone-500 max-w-sm mx-auto">
-              Please double check the order number on your confirmation receipt. Example order numbers: NIRAI-2026-2052, NIRAI-2026-9042.
+              Please double check the order number and 10-digit mobile number from your receipt.
             </p>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

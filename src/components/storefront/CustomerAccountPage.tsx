@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { User, Address } from '../../types';
@@ -15,9 +16,11 @@ import {
   Trash2,
   CheckCircle,
   X,
+  CreditCard,
 } from 'lucide-react';
 
 export const CustomerAccountPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentUser,
     setCurrentUser,
@@ -57,6 +60,26 @@ export const CustomerAccountPage: React.FC = () => {
   const publicProducts = StorageService.getPublicProducts();
   const wishlistProducts = publicProducts.filter((p) => wishlist.includes(p.id));
   const userAddresses: Address[] = currentUser?.addresses || [];
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+
+  const handleCancelOrder = async (orderId: string, orderNumber: string) => {
+    if (!window.confirm(`Are you sure you want to cancel order #${orderNumber}?`)) {
+      return;
+    }
+    setCancellingOrderId(orderId);
+    try {
+      const res = await StorageService.cancelOrder(orderId, 'Cancelled by customer from account portal');
+      setCancellingOrderId(null);
+      if (res.success) {
+        showToast(`Order #${orderNumber} has been cancelled.`, 'info');
+      } else {
+        showToast(res.error || 'Failed to cancel order.', 'error');
+      }
+    } catch (err: any) {
+      setCancellingOrderId(null);
+      showToast(err.message || 'Error requesting cancellation.', 'error');
+    }
+  };
 
   const handleSaveAddress = (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,9 +283,16 @@ export const CustomerAccountPage: React.FC = () => {
                 </h3>
 
                 {myOrders.length === 0 ? (
-                  <div className="bg-white p-12 rounded-xl border border-[#E5DFD3] text-center space-y-2">
+                  <div className="bg-white p-12 rounded-xl border border-[#E5DFD3] text-center space-y-3">
                     <Package className="w-10 h-10 text-stone-300 mx-auto" />
-                    <p className="text-xs text-stone-500">You haven't placed any orders yet.</p>
+                    <p className="font-serif text-sm font-bold text-slate-800">You haven't placed any orders yet</p>
+                    <p className="text-xs text-stone-500">Discover our authentic handwoven South Indian silk sarees.</p>
+                    <button
+                      onClick={() => navigate('/catalog')}
+                      className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                      Browse Sarees
+                    </button>
                   </div>
                 ) : (
                   myOrders.map((order) => (
@@ -279,14 +309,29 @@ export const CustomerAccountPage: React.FC = () => {
                             Placed on {new Date(order.createdAt).toLocaleDateString()}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
+                              order.paymentStatus === 'Paid'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : order.paymentStatus === 'Verification Pending'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : order.paymentStatus === 'Rejected'
+                                ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                : order.paymentStatus === 'Expired'
+                                ? 'bg-stone-100 text-stone-600 border-stone-200'
+                                : 'bg-yellow-50 text-yellow-800 border-yellow-200'
+                            }`}
+                          >
+                            Payment: {order.paymentStatus || 'Awaiting Payment'}
+                          </span>
                           <span
                             className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
                               order.status === 'Delivered'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : order.status === 'Cancelled'
                                 ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-900'
+                                : 'bg-stone-100 text-stone-800'
                             }`}
                           >
                             {order.status}
@@ -312,18 +357,39 @@ export const CustomerAccountPage: React.FC = () => {
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                      <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="text-stone-500">
                           {order.shippingDetails?.courierName || 'Standard Express'} ·{' '}
                           {order.shippingDetails?.trackingId || 'Preparing'}
                         </span>
-                        <button
-                          onClick={() => openTracking(order.orderNumber)}
-                          className="text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 underline underline-offset-2"
-                        >
-                          <span>Track Shipment</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          {(order.paymentStatus === 'Awaiting Payment' || order.paymentStatus === 'Rejected') &&
+                            order.status !== 'Cancelled' && (
+                              <Link
+                                to={`/pay/${order.orderNumber}`}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-900 hover:bg-amber-800 text-amber-50 font-bold rounded text-xs transition-colors shadow-2xs"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>{order.paymentStatus === 'Rejected' ? 'Resubmit Proof' : 'Pay / Submit Proof'}</span>
+                              </Link>
+                            )}
+                          {(order.status === 'Pending' || order.status === 'Confirmed') && (
+                            <button
+                              onClick={() => handleCancelOrder(order.id, order.orderNumber)}
+                              disabled={cancellingOrderId === order.id}
+                              className="text-rose-700 hover:text-rose-900 font-semibold text-[11px] underline underline-offset-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openTracking(order.orderNumber)}
+                            className="text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 underline underline-offset-2 cursor-pointer"
+                          >
+                            <span>Track Shipment</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))

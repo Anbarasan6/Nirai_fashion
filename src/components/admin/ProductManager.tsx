@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
+import { supabase } from '../../services/supabase';
 import { Product, ProductVariant } from '../../types';
 import { generateTamilProductDetails } from '../../services/translator';
 import { MediaUploadModal } from '../common/MediaUploadModal';
@@ -197,12 +198,18 @@ export const ProductManager: React.FC = () => {
     }
   };
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
   const filteredProducts = products.filter(
     (p) =>
       p.nameEn.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
       p.brand.toLowerCase().includes(search.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const paginatedProducts = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-6">
@@ -244,7 +251,7 @@ export const ProductManager: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {filteredProducts.map((p) => {
+              {paginatedProducts.map((p) => {
                 const isLow = p.stock <= p.lowStockThreshold;
                 const cat = categories.find((c) => c.id === p.categoryId);
 
@@ -362,6 +369,43 @@ export const ProductManager: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-stone-200 bg-stone-50 text-xs">
+            <span className="text-stone-500">
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filteredProducts.length)} of {filteredProducts.length} creations
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Previous
+              </button>
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => setPage(i + 1)}
+                  className={`w-7 h-7 rounded text-xs font-semibold cursor-pointer ${
+                    page === i + 1
+                      ? 'bg-amber-900 text-white'
+                      : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Product Modal */}
@@ -750,9 +794,9 @@ export const ProductManager: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <span className="text-[10px] text-stone-400">{rev.date}</span>
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             if (confirm(`Remove review by ${rev.customerName}?`)) {
-                              StorageService.deleteReview(reviewingProduct.id, rev.id);
+                              await supabase.from('reviews').delete().eq('id', rev.id);
                               syncProducts();
                               const updated = StorageService.getProductById(reviewingProduct.id);
                               setReviewingProduct(updated || null);

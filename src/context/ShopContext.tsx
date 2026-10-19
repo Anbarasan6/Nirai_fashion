@@ -10,6 +10,12 @@ import {
   StoreSettings,
 } from '../types';
 import { StorageService, subscribeToStore } from '../services/storage';
+import {
+  supabase,
+  fetchUserWishlist,
+  toggleWishlistInSupabase,
+  syncGuestWishlistRpc,
+} from '../services/supabase';
 import { getT } from '../data/translations';
 
 export interface ToastItem {
@@ -24,11 +30,17 @@ interface ShopContextType {
   t: ReturnType<typeof getT>;
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  isAuthLoading: boolean;
   isAdmin: boolean;
   viewMode: 'storefront' | 'admin';
   setViewMode: (mode: 'storefront' | 'admin') => void;
-  adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers';
-  setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers') => void;
+  adminTab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers' | 'notifications';
+  setAdminTab: (tab: 'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers' | 'notifications') => void;
+  
+  // Store loading & error retry
+  isStoreLoading: boolean;
+  storeError: string | null;
+  retryStoreSync: () => Promise<void>;
   
   // Auth Modal
   isAuthModalOpen: boolean;
@@ -91,12 +103,175 @@ const ShopContext = createContext<ShopContextType | undefined>(undefined);
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const [language, setLanguage] = useState<Language>('en');
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const users = StorageService.getUsers();
-    return users.find((u) => u.role === 'customer') || null;
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // Wishlist & Store Global State
+  const [wishlist, setWishlist] = useState<string[]>(() => StorageService.getGuestWishlist());
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => StorageService.getSettings());
+  const [products, setProducts] = useState<Product[]>(() => StorageService.getProducts());
+  const [isStoreLoading, setIsStoreLoading] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  // Sync with Supabase Auth session & onAuthStateChange
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadUserProfile(authUser: { id: string; email?: string; user_metadata?: any }) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+
+        const { data: addressRows } = await supabase
+          .from('addresses')
+          .select('*')
+          .eq('user_id', authUser.id);
+
+        const addresses = (addressRows || []).map((a: any) => ({
+          id: a.id,
+          fullName: a.full_name,
+          phone: a.phone,
+          street: a.street_address,
+          landmark: a.landmark || undefined,
+          city: a.city,
+          state: a.state,
+          pincode: a.postal_code,
+          isDefault: a.is_default,
+        }));
+
+        if (isMounted) {
+          if (profile) {
+            setCurrentUser({
+              id: profile.id,
+              name: profile.name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
+              email: authUser.email || '',
+              phone: profile.phone || authUser.user_metadata?.phone,
+              role: profile.role || 'customer',
+              addresses,
+              isActive: profile.is_active !== false,
+              createdAt: profile.created_at,
+            });
+          } else {
+            setCurrentUser({
+              id: authUser.id,
+              name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
+              email: authUser.email || '',
+              phone: authUser.user_metadata?.phone,
+              role: 'customer',
+              addresses: [],
+              isActive: true,
+              createdAt: new Date().toISOString(),
+            });
+          }
+
+          // Merge guest wishlist on login into Supabase wishlists table
+          try {
+            const guestItems = StorageService.getGuestWishlist();
+            if (guestItems.length > 0) {
+              await syncGuestWishlistRpc(guestItems);
+              StorageService.setGuestWishlist([]);
+            }
+            const remoteWishlist = await fetchUserWishlist();
+            setWishlist(remoteWishlist);
+          } catch (wErr) {
+            console.warn('Wishlist sync note:', wErr);
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching user profile:', err);
+        if (isMounted) {
+          setCurrentUser({
+            id: authUser.id,
+            name: authUser.email?.split('@')[0] || 'Customer',
+            email: authUser.email || '',
+            role: 'customer',
+            addresses: [],
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsAuthLoading(false);
+        }
+      }
+    }
+
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user);
+      } else {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsAuthLoading(false);
+          setWishlist(StorageService.getGuestWishlist());
+        }
+      }
+    });
+
+    // Listen to ongoing auth changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await loadUserProfile(session.user);
+      } else {
+        if (isMounted) {
+          setCurrentUser(null);
+          setIsAuthLoading(false);
+          setWishlist(StorageService.getGuestWishlist());
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Initialize and synchronize store data from Supabase
+  const retryStoreSync = async () => {
+    setIsStoreLoading(true);
+    setStoreError(null);
+    const res = await StorageService.initSupabaseSync();
+    setIsStoreLoading(false);
+    if (!res.success) {
+      setStoreError(res.error || 'Failed to connect to database.');
+    } else {
+      setProducts(StorageService.getProducts());
+      setStoreSettings(StorageService.getSettings());
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    async function init() {
+      setIsStoreLoading(true);
+      setStoreError(null);
+      const res = await StorageService.initSupabaseSync();
+      if (active) {
+        setIsStoreLoading(false);
+        if (!res.success) {
+          setStoreError(res.error || 'Failed to load catalog from database.');
+        } else {
+          setProducts(StorageService.getProducts());
+          setStoreSettings(StorageService.getSettings());
+        }
+      }
+    }
+    init();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const [viewMode, setViewMode] = useState<'storefront' | 'admin'>('storefront');
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'homepage' | 'media' | 'products' | 'categories' | 'orders' | 'inventory' | 'suppliers' | 'couriers' | 'coupons' | 'content' | 'customers' | 'notifications'>('dashboard');
   const [activeTab, _setActiveTab] = useState<'home' | 'catalog' | 'pdp' | 'cart' | 'checkout' | 'orders' | 'tracking' | 'account' | 'blueprint'>('home');
   const [selectedProductSlug, setSelectedProductSlug] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -136,7 +311,12 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthModalOpen(true);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Signout error:', e);
+    }
     setCurrentUser(null);
     showToast('Signed out of account', 'info');
   };
@@ -153,27 +333,13 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
-  // Wishlist & Store
-  const [wishlist, setWishlist] = useState<string[]>(() => StorageService.getWishlist());
-  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => StorageService.getSettings());
-  const [products, setProducts] = useState<Product[]>(() => StorageService.getProducts());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-
-  // Sync cart to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('nirai_cart', JSON.stringify(cart));
-    } catch (e) {
-      console.error(e);
-    }
-  }, [cart]);
-
   // Subscribe to storage changes across the app
   const refreshData = () => {
     setProducts(StorageService.getProducts());
     setStoreSettings(StorageService.getSettings());
-    setWishlist(StorageService.getWishlist());
+    if (!currentUser) {
+      setWishlist(StorageService.getGuestWishlist());
+    }
   };
 
   useEffect(() => {
@@ -197,7 +363,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const openProduct = (slug: string) => {
     setSelectedProductSlug(slug);
     _setActiveTab('pdp');
-    navigate(`/product/${slug}`);
+    if (window.location.pathname !== `/product/${slug}`) {
+      navigate(`/product/${slug}`);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -315,11 +483,23 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const cartGrandTotal = Math.max(0, cartSubtotal - couponDiscount + shippingFee);
 
-  // Wishlist
-  const toggleWishlist = (productId: string) => {
-    const isAdded = StorageService.toggleWishlist(productId);
-    setWishlist(StorageService.getWishlist());
-    showToast(isAdded ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+  // Wishlist (Supabase for authenticated users, localStorage for guests)
+  const toggleWishlist = async (productId: string) => {
+    if (currentUser) {
+      try {
+        const { isInWishlist } = await toggleWishlistInSupabase(productId);
+        setWishlist((prev) =>
+          isInWishlist ? [...prev, productId] : prev.filter((id) => id !== productId)
+        );
+        showToast(isInWishlist ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+      } catch (err: any) {
+        showToast(err.message || 'Wishlist update failed', 'error');
+      }
+    } else {
+      const isAdded = StorageService.toggleWishlist(productId);
+      setWishlist(StorageService.getGuestWishlist());
+      showToast(isAdded ? 'Added to Wishlist' : 'Removed from Wishlist', 'info');
+    }
   };
 
   const isInWishlist = (productId: string) => wishlist.includes(productId);
@@ -334,11 +514,15 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         t,
         currentUser,
         setCurrentUser,
+        isAuthLoading,
         isAdmin,
         viewMode,
         setViewMode,
         adminTab,
         setAdminTab,
+        isStoreLoading,
+        storeError,
+        retryStoreSync,
         activeTab,
         setActiveTab,
         selectedProductSlug,

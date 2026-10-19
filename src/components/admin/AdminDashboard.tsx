@@ -332,41 +332,49 @@ export const AdminDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
-                {orders.slice(0, 5).map((order) => (
-                  <tr key={order.id} className="hover:bg-stone-50/60 transition-colors">
-                    <td className="py-3 font-mono font-bold text-slate-900">{order.orderNumber}</td>
-                    <td className="py-3">
-                      <span className="font-medium text-slate-800 block">{order.customerName}</span>
-                      <span className="text-[10px] text-stone-400">{order.customerPhone}</span>
-                    </td>
-                    <td className="py-3 font-serif font-bold text-slate-900 tabular-nums">
-                      ₹{order.grandTotal.toLocaleString()}
-                    </td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          order.status === 'Delivered'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : order.status === 'Cancelled'
-                            ? 'bg-rose-100 text-rose-800'
-                            : order.status === 'Shipped'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-amber-100 text-amber-900'
-                        }`}
-                      >
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right">
-                      <button
-                        onClick={() => openTracking(order.orderNumber)}
-                        className="text-amber-800 hover:text-amber-950 font-semibold underline text-[11px]"
-                      >
-                        Track
-                      </button>
+                {orders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-stone-500 italic text-xs">
+                      No customer orders recorded yet. Place a test order through the storefront.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  orders.slice(0, 5).map((order) => (
+                    <tr key={order.id} className="hover:bg-stone-50/60 transition-colors">
+                      <td className="py-3 font-mono font-bold text-slate-900">{order.orderNumber}</td>
+                      <td className="py-3">
+                        <span className="font-medium text-slate-800 block">{order.customerName}</span>
+                        <span className="text-[10px] text-stone-400">{order.customerPhone}</span>
+                      </td>
+                      <td className="py-3 font-serif font-bold text-slate-900 tabular-nums">
+                        ₹{order.grandTotal.toLocaleString()}
+                      </td>
+                      <td className="py-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            order.status === 'Delivered'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : order.status === 'Cancelled'
+                              ? 'bg-rose-100 text-rose-800'
+                              : order.status === 'Shipped'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-amber-100 text-amber-900'
+                          }`}
+                        >
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <button
+                          onClick={() => openTracking(order.orderNumber)}
+                          className="text-amber-800 hover:text-amber-950 font-semibold underline text-[11px]"
+                        >
+                          Track
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

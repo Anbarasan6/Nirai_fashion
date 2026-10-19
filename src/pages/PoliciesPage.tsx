@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
+import { Seo } from '../components/common/Seo';
 import {
   Heart,
   Mail,
@@ -224,8 +225,65 @@ export const PoliciesPage: React.FC<PoliciesPageProps> = ({
     }))
     .filter((cat) => cat.items.length > 0);
 
+  const seoConfig = {
+    about: {
+      title: 'Our Heritage & Weavers',
+      description: 'Discover Nirai Handlooms heritage, master weaver partnerships, GI-tagged silk certifications, and ethical artisan fair compensation in Tamil Nadu.',
+      canonical: '/about',
+    },
+    contact: {
+      title: 'Contact Us',
+      description: 'Get in touch with Nirai Handlooms. Customer support, showroom address in Chennai, Tamil Nadu, and direct artisan enquiry lines.',
+      canonical: '/contact',
+    },
+    shipping: {
+      title: 'Shipping & Delivery Policy',
+      description: 'Transparent Pan-India express shipping details, courier tracking partners (Blue Dart, Delhivery), delivery timelines, and transit insurance.',
+      canonical: '/shipping-policy',
+    },
+    return: {
+      title: 'Returns & Exchange Policy',
+      description: '7-day hassle-free return and exchange policy for traditional handloom sarees, vestis, and ethnic clothing.',
+      canonical: '/return-policy',
+    },
+    refund: {
+      title: 'Refund Policy',
+      description: 'Detailed refund timelines, UPI and bank transfer reversal policies, and inspection criteria for returned handloom items.',
+      canonical: '/refund-policy',
+    },
+    cancellation: {
+      title: 'Cancellation Policy',
+      description: 'Order cancellation terms prior to dispatch and automatic refund processing guidelines.',
+      canonical: '/cancellation-policy',
+    },
+    privacy: {
+      title: 'Privacy Policy',
+      description: 'Nirai Handlooms privacy protection standards, zero PII tracking policy, and data security protocols for customer information.',
+      canonical: '/privacy-policy',
+    },
+    terms: {
+      title: 'Terms of Service',
+      description: 'Official terms of service, conditions of purchase, authenticity guarantees, and governing laws.',
+      canonical: '/terms-of-service',
+    },
+    faq: {
+      title: 'Frequently Asked Questions (FAQ)',
+      description: 'Answers to common questions about our silk purity certifications, custom sizing, delivery timelines, and payment options.',
+      canonical: '/policies',
+    },
+  }[activeTab] || {
+    title: 'Customer Care & Policies',
+    description: 'Nirai Handlooms customer care, authenticity guarantees, and store policies.',
+    canonical: '/policies',
+  };
+
   return (
     <div className="bg-[#FAF9F5] min-h-screen py-10 sm:py-14">
+      <Seo
+        title={seoConfig.title}
+        description={seoConfig.description}
+        canonical={seoConfig.canonical}
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         {/* Main Grid: Sidebar Menu + Content Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

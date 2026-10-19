@@ -1,5 +1,6 @@
 import React from 'react';
 import { useShop } from '../context/ShopContext';
+import { Seo, buildHomeJsonLd } from '../components/common/Seo';
 import { HeroSection } from '../components/storefront/HeroSection';
 import { CategorySection } from '../components/storefront/CategorySection';
 import { FeaturedSection } from '../components/storefront/FeaturedSection';
@@ -23,26 +24,27 @@ export const HomePage: React.FC = () => {
 
   const configuredSections = storeSettings?.homepageSections;
 
-  if (configuredSections && configuredSections.length > 0) {
-    return (
-      <div className="space-y-0">
-        {[...configuredSections]
-          .filter((sec) => sec.isVisible !== false)
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-          .map((sec) => sectionRegistry[sec.id] || null)}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-0">
-      <HeroSection />
-      <CategorySection />
-      <FeaturedSection />
-      <PromoBannerSection />
-      <NewArrivalsSection />
-      <WhyChooseUsSection />
-      <FinalCtaSection />
-    </div>
+    <>
+      <Seo jsonLd={buildHomeJsonLd()} canonical="/" />
+      <div className="space-y-0">
+        {configuredSections && configuredSections.length > 0
+          ? [...configuredSections]
+              .filter((sec) => sec.isVisible !== false)
+              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+              .map((sec) => sectionRegistry[sec.id] || null)
+          : (
+            <>
+              <HeroSection />
+              <CategorySection />
+              <FeaturedSection />
+              <PromoBannerSection />
+              <NewArrivalsSection />
+              <WhyChooseUsSection />
+              <FinalCtaSection />
+            </>
+          )}
+      </div>
+    </>
   );
 };

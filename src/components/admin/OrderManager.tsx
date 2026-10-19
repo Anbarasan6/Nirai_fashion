@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
-import { Order, OrderStatus, PaymentStatus } from '../../types';
+import { Order, OrderStatus, PaymentStatus, PaymentSubmission } from '../../types';
 import {
   Search,
   Truck,
@@ -20,7 +20,15 @@ import {
   ArrowUpRight,
   FileDown,
   AlertCircle,
+  AlertTriangle,
   BarChart3,
+  ShieldCheck,
+  ExternalLink,
+  Image as ImageIcon,
+  Check,
+  Ban,
+  CheckCircle,
+  MessageCircle,
 } from 'lucide-react';
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -34,11 +42,12 @@ const STATUS_OPTIONS: OrderStatus[] = [
 ];
 
 const PAYMENT_OPTIONS: PaymentStatus[] = [
-  'Pending',
-  'PENDING_VERIFICATION',
+  'Awaiting Payment',
+  'Verification Pending',
   'Paid',
+  'Rejected',
+  'Expired',
   'Refunded',
-  'Failed',
 ];
 
 const COURIER_OPTIONS = [
@@ -53,6 +62,19 @@ const COURIER_OPTIONS = [
 ];
 
 // --- Status badge helpers ---
+const getWhatsAppUrl = (order: Order): string => {
+  const rawPhone = order.customerPhone || order.shippingAddress?.phone || '';
+  const digits = rawPhone.replace(/\D/g, '');
+  let normalized = digits;
+  if (digits.length === 10) {
+    normalized = `91${digits}`;
+  } else if (digits.length > 10 && !digits.startsWith('91')) {
+    normalized = `91${digits.slice(-10)}`;
+  }
+  const msg = `Vanakkam ${order.customerName}, this is regarding your Nirai handloom order #${order.orderNumber} (Total: ₹${order.grandTotal.toLocaleString('en-IN')}).`;
+  return `https://wa.me/${normalized}?text=${encodeURIComponent(msg)}`;
+};
+
 function getStatusBadge(status: OrderStatus) {
   const map: Record<OrderStatus, string> = {
     Pending: 'bg-amber-100 text-amber-900 border-amber-200',
@@ -68,23 +90,28 @@ function getStatusBadge(status: OrderStatus) {
 
 function getPayBadge(status: PaymentStatus) {
   const map: Record<PaymentStatus, string> = {
-    Pending: 'text-amber-700',
-    PENDING_VERIFICATION: 'text-orange-700',
-    Paid: 'text-emerald-700',
-    Refunded: 'text-purple-700',
-    Failed: 'text-rose-700',
+    'Awaiting Payment': 'text-amber-800 bg-amber-50 border border-amber-200',
+    'Verification Pending': 'text-orange-900 bg-orange-100 border border-orange-300 font-black',
+    'Paid': 'text-emerald-800 bg-emerald-50 border border-emerald-200',
+    'Rejected': 'text-rose-800 bg-rose-50 border border-rose-200',
+    'Expired': 'text-stone-600 bg-stone-100 border border-stone-200',
+    'Refunded': 'text-purple-800 bg-purple-50 border border-purple-200',
+    'Pending': 'text-amber-800 bg-amber-50 border border-amber-200',
+    'PENDING_VERIFICATION': 'text-orange-900 bg-orange-100 border border-orange-300 font-black',
+    'Failed': 'text-rose-800 bg-rose-50 border border-rose-200',
   };
-  return map[status] || 'text-stone-500';
+  return map[status] || 'text-stone-600 bg-stone-50 border border-stone-200';
 }
 
 // --- Tab filter buckets ---
 const FILTER_TABS = [
-  { id: 'all', label: 'All Orders', statuses: [] as OrderStatus[] },
-  { id: 'pending', label: 'Pending & Confirmed', statuses: ['Pending', 'Confirmed'] as OrderStatus[] },
-  { id: 'processing', label: 'Processing & Packaging', statuses: ['Processing'] as OrderStatus[] },
-  { id: 'shipped', label: 'Shipped & In Transit', statuses: ['Shipped'] as OrderStatus[] },
-  { id: 'delivered', label: 'Delivered', statuses: ['Delivered'] as OrderStatus[] },
-  { id: 'cancelled', label: 'Cancelled / Returned', statuses: ['Cancelled', 'Returned'] as OrderStatus[] },
+  { id: 'all', label: 'All Orders', statuses: [] as OrderStatus[], isPaymentQueue: false },
+  { id: 'verification_pending', label: 'Payment Verification', statuses: [] as OrderStatus[], isPaymentQueue: true },
+  { id: 'pending', label: 'Pending & Confirmed', statuses: ['Pending', 'Confirmed'] as OrderStatus[], isPaymentQueue: false },
+  { id: 'processing', label: 'Processing & Packaging', statuses: ['Processing'] as OrderStatus[], isPaymentQueue: false },
+  { id: 'shipped', label: 'Shipped & In Transit', statuses: ['Shipped'] as OrderStatus[], isPaymentQueue: false },
+  { id: 'delivered', label: 'Delivered', statuses: ['Delivered'] as OrderStatus[], isPaymentQueue: false },
+  { id: 'cancelled', label: 'Cancelled / Returned', statuses: ['Cancelled', 'Returned'] as OrderStatus[], isPaymentQueue: false },
 ];
 
 // --- Shipping Label Print Component ---
@@ -212,13 +239,26 @@ const ShippingLabelPrint: React.FC<{ order: Order; onClose: () => void }> = ({ o
 };
 
 export const OrderManager: React.FC = () => {
-  const { showToast, refreshData } = useShop();
+  const { showToast, refreshData, currentUser } = useShop();
   const [orders, setOrders] = useState<Order[]>(() => StorageService.getOrders());
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showLabel, setShowLabel] = useState(false);
   const [labelOrder, setLabelOrder] = useState<Order | null>(null);
+
+  // Submissions & Payment Verification State
+  const [submissions, setSubmissions] = useState<PaymentSubmission[]>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [signedProofUrls, setSignedProofUrls] = useState<Record<string, string>>({});
+  const [isVerifyingSubId, setIsVerifyingSubId] = useState<string | null>(null);
+  const [rejectingSub, setRejectingSub] = useState<PaymentSubmission | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+  const [manualPaidModalOpen, setManualPaidModalOpen] = useState(false);
+  const [manualPaidNoteInput, setManualPaidNoteInput] = useState('');
+  const [mismatchModalSub, setMismatchModalSub] = useState<PaymentSubmission | null>(null);
+  const [mismatchConfirmInput, setMismatchConfirmInput] = useState('');
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   // Modal form state
   const [status, setStatus] = useState<OrderStatus>('Confirmed');
@@ -236,6 +276,27 @@ export const OrderManager: React.FC = () => {
     refreshData();
   };
 
+  const loadSubmissions = async (orderId: string) => {
+    setLoadingSubmissions(true);
+    try {
+      const list = await StorageService.getPaymentSubmissions(orderId);
+      setSubmissions(list);
+      // Fetch signed URLs for screenshots
+      const urlMap: Record<string, string> = {};
+      for (const sub of list) {
+        if (sub.screenshotPath) {
+          const url = await StorageService.getSignedPaymentProofUrl(sub.screenshotPath);
+          if (url) urlMap[sub.id] = url;
+        }
+      }
+      setSignedProofUrls(urlMap);
+    } catch (err: any) {
+      console.error('Failed to load payment submissions:', err);
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  };
+
   const handleOpenEdit = (order: Order) => {
     setSelectedOrder(order);
     setStatus(order.status);
@@ -246,35 +307,165 @@ export const OrderManager: React.FC = () => {
     setEstimatedDelivery(order.shippingDetails?.estimatedDelivery || '');
     setUtrNumber(order.utrNumber || '');
     setInternalNotes(order.notes || '');
+    loadSubmissions(order.id);
   };
 
-  const handleUpdateOrder = (e: React.FormEvent) => {
+  const handleVerifyPayment = async (sub: PaymentSubmission) => {
+    if (!selectedOrder) return;
+    const isAmountMismatch = Math.abs(sub.amountPaid - selectedOrder.grandTotal) > 0.01;
+
+    // Requirement 5: If amount_paid differs from expected amount, require admin to type VERIFY
+    if (isAmountMismatch) {
+      setMismatchModalSub(sub);
+      setMismatchConfirmInput('');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Confirm Payment Verification:\n\nOrder: #${selectedOrder.orderNumber}\nUTR: ${sub.utr}\nAmount: ₹${sub.amountPaid.toLocaleString()}\nPayer: ${sub.payerName}\n\nHave you verified this credit in your merchant bank/UPI statement?`
+    );
+    if (!confirmed) return;
+
+    await executeVerifyPayment(sub);
+  };
+
+  const executeVerifyPayment = async (sub: PaymentSubmission) => {
+    if (!selectedOrder) return;
+    setIsVerifyingSubId(sub.id);
+    setIsActionLoading(true);
+    try {
+      const res = await StorageService.verifyPayment(sub.id, 'Verified by operations staff in OrderManager');
+      if (res.success) {
+        showToast(`Payment verified! Order #${selectedOrder.orderNumber} is now Confirmed & Paid.`, 'success');
+        syncOrders();
+        setSelectedOrder({
+          ...selectedOrder,
+          paymentStatus: 'Paid',
+          status: 'Confirmed',
+        });
+        setPaymentStatus('Paid');
+        setStatus('Confirmed');
+        setMismatchModalSub(null);
+        await loadSubmissions(selectedOrder.id);
+      } else {
+        showToast(res.error || 'Payment verification failed', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Payment verification failed', 'error');
+    } finally {
+      setIsVerifyingSubId(null);
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingSub || !selectedOrder) return;
+    if (!rejectReasonInput.trim() || rejectReasonInput.trim().length < 5) {
+      showToast('Please provide a specific rejection reason (at least 5 characters)', 'error');
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const res = await StorageService.rejectPayment(rejectingSub.id, rejectReasonInput.trim());
+      if (res.success) {
+        showToast(`Payment rejected for Order #${selectedOrder.orderNumber}. Stock hold retained until payment deadline.`, 'info');
+        syncOrders();
+        setSelectedOrder({
+          ...selectedOrder,
+          paymentStatus: 'Rejected',
+        });
+        setPaymentStatus('Rejected');
+        setRejectingSub(null);
+        setRejectReasonInput('');
+        await loadSubmissions(selectedOrder.id);
+      } else {
+        showToast(res.error || 'Failed to reject payment', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to reject payment', 'error');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleConfirmManualPaid = async () => {
+    if (!selectedOrder) return;
+    if (!manualPaidNoteInput.trim() || manualPaidNoteInput.trim().length < 5) {
+      showToast('Please enter an explanatory note (e.g. Cash collected in store)', 'error');
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const res = await StorageService.markOrderPaidManually(selectedOrder.id, manualPaidNoteInput.trim());
+      if (res.success) {
+        showToast(`Order #${selectedOrder.orderNumber} marked as Paid manually.`, 'success');
+        syncOrders();
+        setSelectedOrder({
+          ...selectedOrder,
+          paymentStatus: 'Paid',
+          status: 'Confirmed',
+        });
+        setPaymentStatus('Paid');
+        setStatus('Confirmed');
+        setManualPaidModalOpen(false);
+        setManualPaidNoteInput('');
+        await loadSubmissions(selectedOrder.id);
+      } else {
+        showToast(res.error || 'Failed to mark order as paid', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to mark order as paid', 'error');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const checkDuplicateUtr = (utr: string, currentOrderId: string) => {
+    const norm = utr.trim().toUpperCase();
+    if (!norm) return null;
+    const otherOrder = orders.find(
+      (o) => o.id !== currentOrderId && o.utrNumber?.trim().toUpperCase() === norm
+    );
+    return otherOrder ? otherOrder.orderNumber : null;
+  };
+
+  const handleUpdateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder) return;
 
-    StorageService.updateOrderStatus(
-      selectedOrder.id,
-      status,
-      paymentStatus,
-      { courierName, trackingId, trackingUrl, estimatedDelivery },
-      { utrNumber: utrNumber.trim(), notes: internalNotes.trim() }
-    );
+    try {
+      await StorageService.updateOrderStatus(
+        selectedOrder.id,
+        status,
+        paymentStatus,
+        { courierName, trackingId, trackingUrl, estimatedDelivery },
+        { utrNumber: utrNumber.trim(), notes: internalNotes.trim() }
+      );
 
-    syncOrders();
-    setSelectedOrder(null);
-    showToast(`Order #${selectedOrder.orderNumber} updated → ${status}`, 'success');
+      syncOrders();
+      setSelectedOrder(null);
+      showToast(`Order #${selectedOrder.orderNumber} updated → ${status}`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Status transition rejected by server', 'error');
+    }
   };
 
   // Tab-based counts
   const tabCounts = FILTER_TABS.reduce((acc, tab) => {
     if (tab.id === 'all') {
       acc[tab.id] = orders.length;
+    } else if (tab.id === 'verification_pending') {
+      acc[tab.id] = orders.filter((o) => o.paymentStatus === 'Verification Pending').length;
     } else {
       acc[tab.id] = orders.filter((o) => tab.statuses.includes(o.status)).length;
     }
     return acc;
   }, {} as Record<string, number>);
 
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const currentTab = FILTER_TABS.find((t) => t.id === activeTab) || FILTER_TABS[0];
 
   const filteredOrders = orders.filter((o) => {
@@ -283,13 +474,25 @@ export const OrderManager: React.FC = () => {
       o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
       o.customerName.toLowerCase().includes(search.toLowerCase()) ||
       o.customerPhone.includes(search) ||
+      (o.utrNumber || '').toLowerCase().includes(search.toLowerCase()) ||
       (o.shippingDetails?.trackingId || '').toLowerCase().includes(search.toLowerCase());
 
-    const matchesTab =
-      currentTab.statuses.length === 0 || currentTab.statuses.includes(o.status);
+    if (!matchesSearch) return false;
 
-    return matchesSearch && matchesTab;
+    if (activeTab === 'verification_pending') {
+      return o.paymentStatus === 'Verification Pending';
+    }
+
+    return currentTab.statuses.length === 0 || currentTab.statuses.includes(o.status);
   });
+
+  // Oldest first for verification queue as required
+  if (activeTab === 'verification_pending') {
+    filteredOrders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / pageSize));
+  const paginatedOrders = filteredOrders.slice((page - 1) * pageSize, page * pageSize);
 
   const handleCourierChange = (val: string) => {
     setCourierName(val);
@@ -371,16 +574,14 @@ export const OrderManager: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
-                  isActive
+                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${isActive
                     ? 'border-amber-900 text-amber-900 bg-amber-50/40'
                     : 'border-transparent text-stone-500 hover:text-slate-800 hover:bg-stone-50'
-                }`}
+                  }`}
               >
                 <span
-                  className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center text-white ${
-                    isActive ? 'bg-amber-900' : dotColors[i] || 'bg-stone-400'
-                  }`}
+                  className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center text-white ${isActive ? 'bg-amber-900' : dotColors[i] || 'bg-stone-400'
+                    }`}
                 >
                   {count}
                 </span>
@@ -443,7 +644,7 @@ export const OrderManager: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredOrders.map((order) => (
+                paginatedOrders.map((order) => (
                   <tr key={order.id} className="hover:bg-stone-50/70 transition-colors">
                     <td className="py-3 px-4">
                       <span className="font-mono font-bold text-slate-900 block">{order.orderNumber}</span>
@@ -454,7 +655,18 @@ export const OrderManager: React.FC = () => {
 
                     <td className="py-3 px-4">
                       <span className="font-semibold text-slate-900 block">{order.customerName}</span>
-                      <span className="text-[11px] text-stone-500">{order.customerPhone}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11px] text-stone-500">{order.customerPhone}</span>
+                        <a
+                          href={getWhatsAppUrl(order)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Contact on WhatsApp"
+                          className="inline-flex items-center p-0.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition cursor-pointer"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
                       <span className="text-[11px] text-stone-400 block truncate max-w-[160px]">
                         {order.shippingAddress.city}, {order.shippingAddress.state} - {order.shippingAddress.pincode}
                       </span>
@@ -483,9 +695,22 @@ export const OrderManager: React.FC = () => {
                       <span className="text-[11px] font-semibold text-slate-700 block">
                         {order.paymentMethod === 'ONLINE_UPI' ? 'Direct UPI' : order.paymentMethod}
                       </span>
-                      <span className={`text-[10px] font-bold ${getPayBadge(order.paymentStatus)}`}>
-                        {order.paymentStatus === 'PENDING_VERIFICATION' ? 'Verifying...' : order.paymentStatus}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[10px] font-bold ${getPayBadge(order.paymentStatus)}`}>
+                          {order.paymentStatus === 'PENDING_VERIFICATION' ? 'Verifying...' : order.paymentStatus}
+                        </span>
+                        {/* Requirement 6: Warning badge on submissions waiting > 24 hours */}
+                        {order.paymentStatus === 'Verification Pending' &&
+                          Date.now() - new Date(order.paymentDetails?.submittedAt || order.createdAt).getTime() > 24 * 60 * 60 * 1000 && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300"
+                              title="Submission waiting > 24 hours"
+                            >
+                              <AlertTriangle className="w-3 h-3 text-rose-700" />
+                              &gt;24h Stale
+                            </span>
+                          )}
+                      </div>
                       {order.utrNumber && (
                         <span className="text-[10px] text-stone-400 block font-mono">UTR: {order.utrNumber}</span>
                       )}
@@ -533,6 +758,42 @@ export const OrderManager: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between p-4 border-t border-stone-200 bg-stone-50 text-xs">
+            <span className="text-stone-500">
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filteredOrders.length)} of {filteredOrders.length} orders
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Previous
+              </button>
+              {[...Array(totalPages)].map((_, i) => (
+                <button
+                  key={i + 1}
+                  onClick={() => setPage(i + 1)}
+                  className={`w-7 h-7 rounded text-xs font-semibold cursor-pointer ${page === i + 1
+                      ? 'bg-amber-900 text-white'
+                      : 'bg-white border border-stone-300 text-stone-700 hover:bg-stone-100'
+                    }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-2.5 py-1 bg-white border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-40 cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Manage Order Modal */}
@@ -545,9 +806,20 @@ export const OrderManager: React.FC = () => {
                 <h3 className="font-serif text-base font-bold text-slate-900">
                   Manage Order #{selectedOrder.orderNumber}
                 </h3>
-                <span className="text-xs text-stone-500">
-                  Customer: {selectedOrder.customerName} ({selectedOrder.customerPhone})
-                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-stone-500">
+                    Customer: {selectedOrder.customerName} ({selectedOrder.customerPhone})
+                  </span>
+                  <a
+                    href={getWhatsAppUrl(selectedOrder)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition shadow-xs cursor-pointer"
+                  >
+                    <MessageCircle className="w-3 h-3" />
+                    Contact on WhatsApp
+                  </a>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedOrder(null)}
@@ -636,21 +908,160 @@ export const OrderManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Verification */}
-              <div className="rounded-xl border border-stone-200 p-4 space-y-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <CreditCard className="w-4 h-4 text-amber-800" />
-                  <span className="font-serif font-bold text-slate-900">Payment Verification Details:</span>
+              {/* Payment Verification & Customer Submissions */}
+              <div className="rounded-xl border border-stone-200 p-4 space-y-3 bg-stone-50/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-amber-800" />
+                    <span className="font-serif font-bold text-slate-900 text-xs">
+                      Payment Verification &amp; Customer Submissions
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setManualPaidModalOpen(true)}
+                    className="text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    Mark Paid Manually
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                {loadingSubmissions ? (
+                  <div className="py-4 text-center text-stone-500 text-xs">
+                    Loading customer payment submissions...
+                  </div>
+                ) : submissions.length === 0 ? (
+                  <div className="p-3 bg-white rounded-lg border border-stone-200 text-stone-500 text-xs">
+                    No offline payment submissions found for this order.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {submissions.map((sub) => {
+                      const isStale = Date.now() - new Date(sub.createdAt).getTime() > 24 * 60 * 60 * 1000;
+                      const isAmountMismatch = Math.abs(sub.amountPaid - selectedOrder.grandTotal) > 0.01;
+                      const proofUrl = signedProofUrls[sub.id];
+
+                      return (
+                        <div
+                          key={sub.id}
+                          className={`p-3 rounded-lg border bg-white space-y-2 ${
+                            sub.status === 'submitted'
+                              ? isAmountMismatch
+                                ? 'border-amber-400 bg-amber-50/20'
+                                : 'border-stone-300'
+                              : sub.status === 'verified'
+                              ? 'border-emerald-200 bg-emerald-50/20'
+                              : 'border-rose-200 bg-rose-50/20'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono font-bold text-xs text-slate-900">
+                                  UTR: {sub.utr}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-100 text-stone-700">
+                                  {sub.method}
+                                </span>
+                                {sub.status === 'submitted' && isStale && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    <AlertTriangle className="w-3 h-3 text-amber-700" />
+                                    Waiting &gt;24h (Stale)
+                                  </span>
+                                )}
+                                {sub.status === 'verified' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    <Check className="w-3 h-3" /> Verified
+                                  </span>
+                                )}
+                                {sub.status === 'rejected' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
+                                    <Ban className="w-3 h-3" /> Rejected
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-stone-600">
+                                Payer: <strong>{sub.payerName}</strong> · Submitted: {new Date(sub.createdAt).toLocaleString()}
+                              </p>
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="font-bold text-slate-800">
+                                  Paid: ₹{sub.amountPaid.toLocaleString()}
+                                </span>
+                                {isAmountMismatch && (
+                                  <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3" /> Expected ₹{selectedOrder.grandTotal.toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                              {sub.rejectReason && (
+                                <p className="text-[11px] text-rose-700 bg-rose-50 p-1.5 rounded border border-rose-200">
+                                  Reason: {sub.rejectReason}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Screenshot preview or link */}
+                            {proofUrl && (
+                              <a
+                                href={proofUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 group flex flex-col items-center gap-1 p-1.5 border border-stone-200 rounded-lg hover:border-amber-800 transition"
+                                title="Click to view full screenshot proof"
+                              >
+                                <img
+                                  src={proofUrl}
+                                  alt="Proof screenshot"
+                                  className="w-14 h-14 object-cover rounded"
+                                />
+                                <span className="text-[9px] text-amber-900 group-hover:underline flex items-center gap-0.5 font-semibold">
+                                  View <ExternalLink className="w-2.5 h-2.5" />
+                                </span>
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Action buttons for submitted items */}
+                          {sub.status === 'submitted' && (
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRejectingSub(sub);
+                                  setRejectReasonInput('');
+                                }}
+                                disabled={isActionLoading}
+                                className="px-3 py-1 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-semibold cursor-pointer"
+                              >
+                                Reject Proof
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyPayment(sub)}
+                                disabled={isActionLoading || isVerifyingSubId === sub.id}
+                                className="px-4 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                {isVerifyingSubId === sub.id ? 'Verifying...' : 'Verify Payment'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
                   <div>
-                    <label className="block font-semibold text-stone-600 mb-1">UPI / UTR Ref #</label>
+                    <label className="block font-semibold text-stone-600 mb-1">Active UPI / UTR Ref #</label>
                     <input
                       type="text"
                       value={utrNumber}
                       onChange={(e) => setUtrNumber(e.target.value)}
                       placeholder="e.g. 123456789012"
-                      className="w-full p-2 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800"
+                      className="w-full p-2 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800 text-xs"
                     />
                   </div>
                   <div>
@@ -659,7 +1070,7 @@ export const OrderManager: React.FC = () => {
                       type="text"
                       value={selectedOrder.paymentMethod}
                       readOnly
-                      className="w-full p-2 border border-stone-200 rounded-lg bg-stone-50 text-stone-500"
+                      className="w-full p-2 border border-stone-200 rounded-lg bg-stone-50 text-stone-500 text-xs"
                     />
                   </div>
                 </div>
@@ -796,6 +1207,189 @@ export const OrderManager: React.FC = () => {
             setLabelOrder(null);
           }}
         />
+      )}
+
+      {/* Reject Payment Reason Modal */}
+      {rejectingSub && selectedOrder && (
+        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2 text-rose-800">
+                <Ban className="w-5 h-5" />
+                <h3 className="font-serif font-bold text-base">Reject Payment Proof</h3>
+              </div>
+              <button
+                onClick={() => setRejectingSub(null)}
+                className="text-stone-400 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600">
+              Rejecting offline submission for Order <strong>#{selectedOrder.orderNumber}</strong> (UTR: <code className="font-mono font-bold">{rejectingSub.utr}</code>). The customer will see this reason on their tracking / account page and can re-submit before the deadline.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Mandatory Rejection Reason:
+              </label>
+              <textarea
+                value={rejectReasonInput}
+                onChange={(e) => setRejectReasonInput(e.target.value)}
+                placeholder="e.g. UTR not found in bank statement, amount is short by ₹500, or receipt image is unreadable..."
+                rows={3}
+                className="w-full text-xs p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-800"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectingSub(null)}
+                className="px-3 py-1.5 border border-stone-300 text-stone-700 rounded-lg text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={isActionLoading || rejectReasonInput.trim().length < 5}
+                className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
+              >
+                {isActionLoading ? 'Rejecting...' : 'Confirm Rejection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Mark Paid Modal */}
+      {manualPaidModalOpen && selectedOrder && (
+        <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <CheckCircle className="w-5 h-5" />
+                <h3 className="font-serif font-bold text-base">Mark Order Paid Manually</h3>
+              </div>
+              <button
+                onClick={() => setManualPaidModalOpen(false)}
+                className="text-stone-400 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600">
+              You are manually marking Order <strong>#{selectedOrder.orderNumber}</strong> as <strong>Paid</strong> and <strong>Confirmed</strong>. An immutable audit record will be logged with your administrator identity.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Mandatory Audit Note:
+              </label>
+              <textarea
+                value={manualPaidNoteInput}
+                onChange={(e) => setManualPaidNoteInput(e.target.value)}
+                placeholder="e.g. Cash collected at store counter, or verified via direct bank branch statement..."
+                rows={3}
+                className="w-full text-xs p-2.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-800"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setManualPaidModalOpen(false)}
+                className="px-3 py-1.5 border border-stone-300 text-stone-700 rounded-lg text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmManualPaid}
+                disabled={isActionLoading || manualPaidNoteInput.trim().length < 5}
+                className="px-4 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer"
+              >
+                {isActionLoading ? 'Marking Paid...' : 'Confirm Paid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Amount Mismatch Confirmation Modal (Requirement 5) */}
+      {mismatchModalSub && selectedOrder && (
+        <div className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2 text-amber-800">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <h3 className="font-serif font-bold text-base">Confirm Amount Mismatch</h3>
+              </div>
+              <button
+                onClick={() => setMismatchModalSub(null)}
+                className="text-stone-400 hover:text-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-stone-600">
+              The amount paid on this submission differs from the order grand total. Please confirm both figures carefully against your merchant account:
+            </p>
+
+            <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-600">Expected Order Total:</span>
+                <span className="font-bold text-slate-900 font-mono">₹{selectedOrder.grandTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-600">Customer Amount Paid:</span>
+                <span className="font-bold text-amber-900 font-mono">₹{mismatchModalSub.amountPaid.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-t border-amber-200 pt-1.5 font-bold">
+                <span className="text-stone-700">Discrepancy:</span>
+                <span className="text-rose-700 font-mono">
+                  {mismatchModalSub.amountPaid < selectedOrder.grandTotal ? '-' : '+'}₹
+                  {Math.abs(mismatchModalSub.amountPaid - selectedOrder.grandTotal).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                Type <strong className="font-mono text-slate-900 bg-stone-100 px-1 py-0.5 rounded">VERIFY</strong> to approve this payment:
+              </label>
+              <input
+                type="text"
+                value={mismatchConfirmInput}
+                onChange={(e) => setMismatchConfirmInput(e.target.value)}
+                placeholder="VERIFY"
+                className="w-full text-xs p-2.5 border border-stone-300 rounded-lg font-mono focus:outline-none focus:ring-1 focus:ring-amber-800 uppercase"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setMismatchModalSub(null)}
+                className="px-3 py-1.5 border border-stone-300 text-stone-700 rounded-lg text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeVerifyPayment(mismatchModalSub)}
+                disabled={isActionLoading || mismatchConfirmInput.trim() !== 'VERIFY'}
+                className="px-4 py-1.5 bg-amber-900 hover:bg-amber-950 text-white rounded-lg text-xs font-semibold disabled:opacity-40 cursor-pointer"
+              >
+                {isActionLoading ? 'Verifying...' : 'Confirm & Verify'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

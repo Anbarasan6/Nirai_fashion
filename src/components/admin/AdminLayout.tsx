@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../../context/ShopContext';
+import { supabase } from '../../services/supabase';
 import { StorageService } from '../../services/storage';
-import { User } from '../../types';
+import { User, Order } from '../../types';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 import {
   LayoutDashboard,
   Package,
@@ -24,15 +26,17 @@ import {
   LogOut,
   Sparkles,
   Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 
 export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const { adminTab, setAdminTab, setViewMode, currentUser, setCurrentUser, showToast } = useShop();
 
-  const [adminEmail, setAdminEmail] = useState('admin@nirai.in');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if current user has admin privileges
   const isAuthorized =
@@ -40,6 +44,60 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     (currentUser.role === 'super_admin' ||
       currentUser.role === 'admin' ||
       currentUser.role === 'staff');
+
+  const [realtimePendingCount, setRealtimePendingCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
+
+    // Load admin-specific entities on-demand (orders, users, suppliers, couriers, media, etc.)
+    StorageService.syncAdminData();
+
+    const fetchPending = async () => {
+      const { count, error } = await supabase
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('payment_status', 'Verification Pending');
+
+      if (!error && count !== null) {
+        setRealtimePendingCount(count);
+      }
+    };
+
+    fetchPending();
+
+    // RLS ensures only staff/admin receive updates on orders table
+    const channel = supabase
+      .channel('admin_realtime_orders')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+        },
+        (payload: any) => {
+          fetchPending();
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const newOrder = payload.new;
+            if (
+              newOrder?.payment_status === 'Verification Pending' &&
+              payload.old?.payment_status !== 'Verification Pending'
+            ) {
+              showToast(
+                `New payment proof submitted for Order #${newOrder.order_number}!`,
+                'info'
+              );
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthorized, showToast]);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -54,36 +112,58 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
     { id: 'couriers', label: 'Courier & Shipping Rates', icon: Truck },
     { id: 'coupons', label: 'Coupons & Offers', icon: Tag },
     { id: 'content', label: 'Shipping, Banners & Settings', icon: Megaphone },
+    { id: 'notifications', label: 'Notifications & Outbox', icon: Mail },
   ];
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    const users = StorageService.getUsers();
-    const found = users.find(
-      (u) =>
-        u.email.toLowerCase() === adminEmail.trim().toLowerCase() &&
-        (u.role === 'super_admin' || u.role === 'admin' || u.role === 'staff')
-    );
 
-    if (found) {
-      if (!found.isActive) {
-        setAuthError('This administrator account has been disabled.');
+    if (!adminEmail.trim() || !adminPassword.trim()) {
+      setAuthError('Please enter both administrator email and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: adminEmail.trim().toLowerCase(),
+        password: adminPassword.trim(),
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        showToast(error.message, 'error');
         return;
       }
-      setCurrentUser(found);
-      showToast(`Authenticated as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
-    } else {
-      setAuthError('Invalid credentials or unauthorized administrative role.');
-    }
-  };
 
-  const handleAuthorizeRole = (roleEmail: string) => {
-    const users = StorageService.getUsers();
-    const found = users.find((u) => u.email.toLowerCase() === roleEmail.toLowerCase());
-    if (found) {
-      setCurrentUser(found);
-      showToast(`Authorized as ${found.name} (${found.role.replace('_', ' ')})`, 'success');
+      // Query profile role to verify administrative status
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, is_active')
+        .eq('id', data.user.id)
+        .single();
+
+      if (!profile || !['staff', 'admin', 'super_admin'].includes(profile.role)) {
+        await supabase.auth.signOut();
+        setAuthError('Access Denied: Your account does not have staff or administrator privileges.');
+        showToast('Access denied: Administrative privileges required.', 'error');
+        return;
+      }
+
+      if (!profile.is_active) {
+        await supabase.auth.signOut();
+        setAuthError('This administrator account has been disabled.');
+        showToast('Account disabled.', 'error');
+        return;
+      }
+
+      showToast(`Welcome! Authenticated with ${profile.role} privileges.`, 'success');
+    } catch (err: any) {
+      setAuthError(err?.message || 'Authentication failed.');
+      showToast(err?.message || 'Authentication failed.', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -140,6 +220,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                 <KeyRound className="w-4 h-4 text-stone-500 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
+                  required
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="••••••••"
@@ -150,59 +231,28 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+              disabled={isSubmitting}
+              className="w-full py-2.5 bg-amber-700 hover:bg-amber-600 text-white rounded-lg font-semibold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <Lock className="w-4 h-4" />
-              <span>Authenticate into Console</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Authenticate into Console</span>
+                </>
+              )}
             </button>
           </form>
 
-          {/* 1-Click Role Authorization for Instant Testing */}
-          <div className="pt-4 border-t border-[#482026] space-y-2">
-            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>1-Click Test Authorization by Role:</span>
-            </span>
-
-            <div className="space-y-1.5 text-xs">
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('admin@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">
-                    Ramanathan Swaminathan (Super Admin)
-                  </div>
-                  <div className="text-[10px] text-stone-400">Full Operational Authority</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('catalog@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">Kavitha Balachander (Admin)</div>
-                  <div className="text-[10px] text-stone-400">Catalog, Pricing & Categories</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleAuthorizeRole('warehouse@nirai.in')}
-                className="w-full p-2 bg-[#1C0D0F] hover:bg-[#38161A] border border-[#482026] hover:border-amber-500/50 rounded-lg text-left text-stone-200 transition-colors cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-semibold text-amber-200">Murugan Selvam (Staff)</div>
-                  <div className="text-[10px] text-stone-400">Orders, Packaging & Logistics</div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-            </div>
+          {/* Security Notice */}
+          <div className="pt-3 border-t border-[#482026] text-center">
+            <p className="text-[11px] text-stone-500">
+              Access is restricted to authorized personnel. All administrative activities are logged.
+            </p>
           </div>
 
           {/* Return to Storefront */}
@@ -244,6 +294,11 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = adminTab === item.id;
+            const pendingVerificationCount =
+              item.id === 'orders'
+                ? realtimePendingCount
+                : 0;
+
             return (
               <button
                 key={item.id}
@@ -251,14 +306,24 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
                   setAdminTab(item.id as any);
                   navigate(`/admin/${item.id}`);
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-amber-800/90 text-white shadow-xs'
                     : 'text-stone-300 hover:bg-[#341C20] hover:text-white'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-stone-400'}`} />
-                <span>{item.label}</span>
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-stone-400'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {pendingVerificationCount > 0 && (
+                  <span
+                    title={`${pendingVerificationCount} offline payments awaiting manual verification`}
+                    className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-black text-[10px] animate-pulse"
+                  >
+                    {pendingVerificationCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -323,7 +388,11 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         </header>
 
         {/* Page Content */}
-        <div className="p-6 sm:p-8 flex-1">{children}</div>
+        <div className="p-6 sm:p-8 flex-1">
+          <ErrorBoundary level="admin" name={`admin-${adminTab}`}>
+            {children}
+          </ErrorBoundary>
+        </div>
       </main>
     </div>
   );

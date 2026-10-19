@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import { HeroSlide } from '../../types';
+import { cldUrl } from '../../utils/cloudinary';
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 
 export const HeroSection: React.FC = () => {
@@ -68,11 +69,18 @@ export const HeroSection: React.FC = () => {
               {/* Picture tag for responsive desktop vs mobile banner */}
               <picture>
                 {slide.mobileImage && (
-                  <source media="(max-width: 640px)" srcSet={slide.mobileImage} />
+                  <source
+                    media="(max-width: 640px)"
+                    srcSet={cldUrl(slide.mobileImage, { w: 640, crop: 'fill' })}
+                  />
                 )}
                 <img
-                  src={slide.desktopImage}
+                  src={cldUrl(slide.desktopImage, { w: 1440, crop: 'fill' })}
                   alt={slide.titleEn}
+                  // @ts-expect-error React 19 supports fetchPriority
+                  fetchpriority={idx === 0 ? 'high' : 'auto'}
+                  loading={idx === 0 ? 'eager' : 'lazy'}
+                  decoding="async"
                   className="w-full h-full object-cover object-center filter brightness-[0.82]"
                 />
               </picture>

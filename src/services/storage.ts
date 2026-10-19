@@ -17,65 +17,109 @@ import {
   PromoBannerConfig,
   HomepageSectionItem,
   LogoSettings,
+  PaymentSettings,
+  PaymentSubmission,
+  PaymentInstructions,
 } from '../types';
 import {
-  initialCategories,
-  initialProducts,
-  initialSuppliers,
-  initialCouriers,
-  initialCoupons,
-  initialBanners,
-  initialOrders,
-  initialUsers,
-  initialStoreSettings,
-  initialMediaItems,
-} from '../data/initialData';
-import {
+  fetchProductsFromSupabase,
+  fetchActiveProductsForStorefront,
   saveProductToSupabase,
   deleteProductFromSupabase,
-  fetchProductsFromSupabase,
+  fetchCategoriesFromSupabase,
   saveCategoryToSupabase,
   deleteCategoryFromSupabase,
-  fetchCategoriesFromSupabase,
-  saveOrderToSupabase,
   fetchOrdersFromSupabase,
-  saveUserToSupabase,
-  fetchUsersFromSupabase,
+  saveOrderToSupabase,
+  updateOrderStatusInSupabase,
+  fetchCouponsFromSupabase,
   saveCouponToSupabase,
   deleteCouponFromSupabase,
-  fetchCouponsFromSupabase,
-  saveSettingsToSupabase,
   fetchSettingsFromSupabase,
-  autoSeedSupabaseIfEmpty,
-  checkSupabaseConnection,
+  saveSettingsToSupabase,
+  fetchSuppliersFromSupabase,
+  saveSupplierToSupabase,
+  deleteSupplierFromSupabase,
+  fetchCouriersFromSupabase,
+  saveCourierToSupabase,
+  deleteCourierFromSupabase,
+  fetchStockMovementsFromSupabase,
+  adjustStockViaRpc,
+  fetchMediaItemsFromSupabase,
+  saveMediaItemToSupabase,
+  deleteMediaItemFromSupabase,
+  fetchUsersFromSupabase,
+  saveUserToSupabase,
+  fetchUserWishlist,
+  toggleWishlistInSupabase,
+  syncGuestWishlistRpc,
+  placeOrderViaRpc,
+  updateOrderStatusViaRpc,
+  cancelOrderViaRpc,
+  quoteCartViaRpc,
+  trackOrderViaRpc,
+  fetchPaymentSettingsFromSupabase,
+  savePaymentSettingsToSupabase,
+  getPaymentInstructionsViaRpc,
+  submitPaymentProofViaRpc,
+  verifyPaymentViaRpc,
+  rejectPaymentViaRpc,
+  markOrderPaidManuallyViaRpc,
+  fetchPaymentSubmissionsForOrder,
+  fetchPendingPaymentSubmissions,
+  uploadPaymentProof,
+  getSignedPaymentProofUrl,
+  uploadPaymentQrImage,
+  supabase,
 } from './supabase';
 
-const KEYS = {
-  PRODUCTS: 'nirai_products_v1',
-  CATEGORIES: 'nirai_categories_v1',
-  SUPPLIERS: 'nirai_suppliers_v1',
-  COURIERS: 'nirai_couriers_v1',
-  COUPONS: 'nirai_coupons_v1',
-  BANNERS: 'nirai_banners_v1',
-  ORDERS: 'nirai_orders_v1',
-  USERS: 'nirai_users_v1',
-  STOCK_MOVEMENTS: 'nirai_stock_movements_v1',
-  SETTINGS: 'nirai_settings_v1',
-  WISHLIST: 'nirai_wishlist_v1',
-  MEDIA: 'nirai_media_v1',
-  ACTIVE_USER: 'nirai_active_user',
-};
+/**
+ * Storage Keys strictly reserved for client-side state
+ * Per specification: Supabase is the sole source of truth for all business entities.
+ * localStorage is ONLY used for guest cart, guest wishlist, and UI preferences.
+ */
+export const CLIENT_STORAGE_KEYS = {
+  CART: 'nirai_cart',
+  GUEST_WISHLIST: 'nirai_guest_wishlist',
+  LANGUAGE: 'nirai_lang',
+} as const;
 
-// Event listener system for reactive real-time updates
+// Legacy storage keys that must be wiped to prevent demo data from lingering
+const LEGACY_STORAGE_KEYS = [
+  'nirai_products_v1',
+  'nirai_categories_v1',
+  'nirai_suppliers_v1',
+  'nirai_couriers_v1',
+  'nirai_coupons_v1',
+  'nirai_banners_v1',
+  'nirai_orders_v1',
+  'nirai_users_v1',
+  'nirai_stock_movements_v1',
+  'nirai_settings_v1',
+  'nirai_media_v1',
+  'nirai_wishlist_v1',
+  'nirai_active_user',
+];
+
+// Automatically purge legacy localStorage database cache on execution
+try {
+  LEGACY_STORAGE_KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+  });
+} catch {
+  // Ignore in non-browser or sandbox environments
+}
+
+// Event listener system for reactive real-time updates across components
 type StorageListener = () => void;
 const listeners: Set<StorageListener> = new Set();
 
-function notifyListeners() {
+export function notifyListeners() {
   listeners.forEach((listener) => {
     try {
       listener();
     } catch (e) {
-      console.error('Listener callback error', e);
+      console.error('Storage listener callback error', e);
     }
   });
 }
@@ -87,374 +131,578 @@ export function subscribeToStore(listener: StorageListener) {
   };
 }
 
-function getItem<T>(key: string, defaultVal: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify(defaultVal));
-      return defaultVal;
-    }
-    return JSON.parse(raw);
-  } catch (err) {
-    console.warn(`Error reading ${key} from localStorage, using fallback`, err);
-    return defaultVal;
-  }
-}
+// Baseline default settings while remote settings are being fetched from Supabase
+const defaultStoreSettings: StoreSettings = {
+  storeName: 'Nirai',
+  taglineEn: 'Pure South Indian Handlooms & Traditional Wear',
+  taglineTa: 'பாரம்பரிய தென்னிந்திய கைத்தறி ஆடைகள்',
+  logo: {
+    altText: 'Nirai Traditional Handlooms',
+  },
+  heroSlides: [],
+  promoBanner: {
+    id: 'promo-default',
+    titleEn: 'Festive Handloom Collections',
+    titleTa: 'சிறப்பு கைத்தறி திருவிழா',
+    subtitleEn: 'Authentic South Indian artisanal weaves crafted with heritage precision.',
+    subtitleTa: 'கைத்தறி நெசவாளர்களின் கைவண்ணத்தில் உருவான பாரம்பரிய ஆடைகள்.',
+    badgeEn: 'Handcrafted',
+    badgeTa: 'கைத்தறி',
+    ctaTextEn: 'Explore Collection',
+    ctaTextTa: 'தொகுப்பைப் பார்',
+    ctaLink: 'catalog',
+    desktopImage: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1600&q=80',
+    mobileImage: 'https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1080&q=80',
+    isActive: true,
+  },
+  homepageSections: [
+    { id: 'hero', label: 'Hero Carousel', isVisible: true, order: 1 },
+    { id: 'categories', label: 'Categories', isVisible: true, order: 2 },
+    { id: 'featured', label: 'Featured Handlooms', isVisible: true, order: 3 },
+    { id: 'promo', label: 'Promotional Banner', isVisible: true, order: 4 },
+    { id: 'new_arrivals', label: 'New Arrivals', isVisible: true, order: 5 },
+    { id: 'why_us', label: 'Why Choose Us', isVisible: true, order: 6 },
+    { id: 'final_cta', label: 'Call To Action', isVisible: true, order: 7 },
+  ],
+  freeShippingThreshold: 1500,
+  standardShippingFee: 120,
+  shippingRules: {
+    tamilNaduStandard: 80,
+    tamilNaduExpress: 160,
+    indiaStandard: 120,
+    indiaExpress: 220,
+  },
+  announcementEn: '✨ Free express delivery across India on orders above ₹1,500',
+  announcementTa: '✨ ₹1,500-க்கு மேல் இலவச எக்ஸ்பிரஸ் டெலிவரி',
+  supportPhone: '+91 44 2498 7654',
+  supportEmail: 'care@nirai.in',
+  isAnnouncementActive: true,
+};
 
-function setItem<T>(key: string, val: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-    notifyListeners();
-  } catch (err) {
-    console.error(`Error saving ${key} to localStorage`, err);
-  }
-}
+// In-Memory Database Cache (Not persisted in localStorage)
+const memoryCache = {
+  products: [] as Product[],
+  categories: [] as Category[],
+  orders: [] as Order[],
+  suppliers: [] as Supplier[],
+  couriers: [] as CourierPartner[],
+  coupons: [] as Coupon[],
+  banners: [] as Banner[],
+  settings: defaultStoreSettings,
+  mediaItems: [] as MediaItem[],
+  stockMovements: [] as StockMovement[],
+  users: [] as User[],
+  isLoaded: false,
+  fetchError: null as string | null,
+};
 
+/**
+ * Authoritative Storage Service
+ * Read operations serve the synchronized in-memory database cache.
+ * Write operations modify the remote Supabase database and update cache upon confirmation.
+ */
 export const StorageService = {
-  // PRODUCTS
-  getProducts(): Product[] {
-    return getItem<Product[]>(KEYS.PRODUCTS, initialProducts);
+  isInitialized(): boolean {
+    return memoryCache.isLoaded;
   },
 
-  // Security isolation: Strip internal supplier sourcing data for public customer storefront
+  hasError(): boolean {
+    return Boolean(memoryCache.fetchError);
+  },
+
+  getError(): string | null {
+    return memoryCache.fetchError;
+  },
+
+  // ============================================================================
+  // 1. PRODUCTS
+  // ============================================================================
+
+  getProducts(): Product[] {
+    return memoryCache.products;
+  },
+
   getPublicProducts(): Product[] {
-    const products = this.getProducts().filter((p) => p.isActive);
-    return products.map((p) => {
-      // Return safe copy without supplier identity, purchase price, or internal notes
-      const { supplierId, purchaseCost, internalNotes, ...safeProduct } = p;
-      const safeVariants = safeProduct.variants.map((v) => {
-        const { supplierId, purchasePrice, ...safeVar } = v;
-        return safeVar;
+    return memoryCache.products
+      .filter((p) => p.isActive)
+      .map((p) => {
+        const { supplierId, purchaseCost, internalNotes, ...safeProduct } = p;
+        const safeVariants = safeProduct.variants.map((v) => {
+          const { supplierId, purchasePrice, ...safeVar } = v;
+          return safeVar;
+        });
+        return {
+          ...safeProduct,
+          variants: safeVariants as ProductVariant[],
+        };
       });
-      return {
-        ...safeProduct,
-        variants: safeVariants as ProductVariant[],
-      };
-    });
   },
 
   getProductById(id: string): Product | undefined {
-    return this.getProducts().find((p) => p.id === id);
+    return memoryCache.products.find((p) => p.id === id);
   },
 
   getProductBySlug(slug: string): Product | undefined {
-    return this.getProducts().find((p) => p.slug === slug);
+    return memoryCache.products.find((p) => p.slug === slug);
   },
 
-  saveProduct(product: Product): void {
-    const list = this.getProducts();
-    const idx = list.findIndex((p) => p.id === product.id);
-    // Recalculate final price based on Base Price, Regular Discount, and Special Discount
+  async saveProduct(product: Product): Promise<boolean> {
     const regularOff = (product.basePrice * (product.regularDiscount || 0)) / 100;
     const priceAfterRegular = product.basePrice - regularOff;
     const specialOff = (priceAfterRegular * (product.specialDiscount || 0)) / 100;
     product.finalPrice = Math.round(priceAfterRegular - specialOff);
     product.updatedAt = new Date().toISOString();
 
-    if (idx >= 0) {
-      const oldStock = list[idx].stock;
-      if (oldStock !== product.stock) {
-        this.logStockMovement({
-          productId: product.id,
-          productName: product.nameEn,
-          sku: product.sku,
-          type: 'ADJUSTMENT',
-          quantityDelta: product.stock - oldStock,
-          previousStock: oldStock,
-          newStock: product.stock,
-          reason: 'Manual stock edit in Product Manager',
-          performedBy: 'Admin',
-        });
+    const ok = await saveProductToSupabase(product);
+    if (ok) {
+      const idx = memoryCache.products.findIndex((p) => p.id === product.id);
+      if (idx >= 0) {
+        memoryCache.products[idx] = product;
+      } else {
+        memoryCache.products.unshift(product);
       }
-      list[idx] = product;
-    } else {
-      list.unshift(product);
-      this.logStockMovement({
-        productId: product.id,
-        productName: product.nameEn,
-        sku: product.sku,
-        type: 'RECEIPT',
-        quantityDelta: product.stock,
-        previousStock: 0,
-        newStock: product.stock,
-        reason: 'Initial Product Creation',
-        performedBy: 'Admin',
-      });
+      notifyListeners();
     }
-    setItem(KEYS.PRODUCTS, list);
-    // Background async sync to Supabase
-    saveProductToSupabase(product).catch(() => {});
+    return ok;
   },
 
-  deleteProduct(id: string): void {
-    const list = this.getProducts().filter((p) => p.id !== id);
-    setItem(KEYS.PRODUCTS, list);
-    deleteProductFromSupabase(id).catch(() => {});
-  },
-
-  // CATEGORIES
-  getCategories(): Category[] {
-    return getItem<Category[]>(KEYS.CATEGORIES, initialCategories);
-  },
-
-  saveCategory(category: Category): void {
-    const list = this.getCategories();
-    const idx = list.findIndex((c) => c.id === category.id);
-    if (idx >= 0) {
-      list[idx] = category;
-    } else {
-      list.push(category);
+  async deleteProduct(id: string): Promise<boolean> {
+    const ok = await deleteProductFromSupabase(id);
+    if (ok) {
+      memoryCache.products = memoryCache.products.filter((p) => p.id !== id);
+      notifyListeners();
     }
-    setItem(KEYS.CATEGORIES, list);
-    saveCategoryToSupabase(category).catch(() => {});
+    return ok;
   },
 
-  deleteCategory(id: string): void {
-    const list = this.getCategories().filter((c) => c.id !== id);
-    setItem(KEYS.CATEGORIES, list);
-    deleteCategoryFromSupabase(id).catch(() => {});
-  },
-
-  // SUPPLIERS (Strictly Admin internal)
-  getSuppliers(): Supplier[] {
-    return getItem<Supplier[]>(KEYS.SUPPLIERS, initialSuppliers);
-  },
-
-  saveSupplier(supplier: Supplier): void {
-    const list = this.getSuppliers();
-    const idx = list.findIndex((s) => s.id === supplier.id);
-    if (idx >= 0) {
-      list[idx] = supplier;
-    } else {
-      list.push(supplier);
+  toggleProductFeatured(productId: string): boolean {
+    const p = memoryCache.products.find((prod) => prod.id === productId);
+    if (p) {
+      p.isFeatured = !p.isFeatured;
+      saveProductToSupabase(p).catch(console.error);
+      notifyListeners();
+      return p.isFeatured;
     }
-    setItem(KEYS.SUPPLIERS, list);
+    return false;
   },
 
-  deleteSupplier(id: string): void {
-    const list = this.getSuppliers().filter((s) => s.id !== id);
-    setItem(KEYS.SUPPLIERS, list);
-  },
-
-  // COURIER PARTNERS
-  getCourierPartners(): CourierPartner[] {
-    return getItem<CourierPartner[]>(KEYS.COURIERS, initialCouriers);
-  },
-
-  saveCourierPartner(courier: CourierPartner): void {
-    const list = this.getCourierPartners();
-    const idx = list.findIndex((c) => c.id === courier.id);
-    if (idx >= 0) {
-      list[idx] = courier;
-    } else {
-      list.push(courier);
+  toggleProductNewArrival(productId: string): boolean {
+    const p = memoryCache.products.find((prod) => prod.id === productId);
+    if (p) {
+      p.isNewArrival = !p.isNewArrival;
+      saveProductToSupabase(p).catch(console.error);
+      notifyListeners();
+      return !!p.isNewArrival;
     }
-    setItem(KEYS.COURIERS, list);
+    return false;
   },
 
-  deleteCourierPartner(id: string): void {
-    const list = this.getCourierPartners().filter((c) => c.id !== id);
-    setItem(KEYS.COURIERS, list);
-  },
-
-  // ORDERS
-  getOrders(): Order[] {
-    const orders = getItem<Order[]>(KEYS.ORDERS, initialOrders);
-    const missing = initialOrders.filter(
-      (init) => !orders.some((o) => o.id === init.id || o.orderNumber === init.orderNumber)
+  getNewArrivals(): Product[] {
+    const products = this.getPublicProducts();
+    const tagged = products.filter((p) => p.isNewArrival);
+    if (tagged.length >= 4) return tagged;
+    return [...products].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    if (missing.length > 0) {
-      const merged = [...missing, ...orders];
-      setItem(KEYS.ORDERS, merged);
-      return merged;
+  },
+
+  // ============================================================================
+  // 2. CATEGORIES
+  // ============================================================================
+
+  getCategories(): Category[] {
+    return memoryCache.categories;
+  },
+
+  async saveCategory(category: Category): Promise<boolean> {
+    const ok = await saveCategoryToSupabase(category);
+    if (ok) {
+      const idx = memoryCache.categories.findIndex((c) => c.id === category.id);
+      if (idx >= 0) {
+        memoryCache.categories[idx] = category;
+      } else {
+        memoryCache.categories.push(category);
+      }
+      notifyListeners();
     }
-    return orders;
+    return ok;
+  },
+
+  async deleteCategory(id: string): Promise<boolean> {
+    const ok = await deleteCategoryFromSupabase(id);
+    if (ok) {
+      memoryCache.categories = memoryCache.categories.filter((c) => c.id !== id);
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  reorderCategories(categoryIds: string[]): void {
+    categoryIds.forEach((id, idx) => {
+      const cat = memoryCache.categories.find((c) => c.id === id);
+      if (cat) {
+        cat.order = idx + 1;
+        saveCategoryToSupabase(cat).catch(console.error);
+      }
+    });
+    notifyListeners();
+  },
+
+  // ============================================================================
+  // 3. SUPPLIERS (Admin Internal)
+  // ============================================================================
+
+  getSuppliers(): Supplier[] {
+    return memoryCache.suppliers;
+  },
+
+  async saveSupplier(supplier: Supplier): Promise<boolean> {
+    const ok = await saveSupplierToSupabase(supplier);
+    if (ok) {
+      const idx = memoryCache.suppliers.findIndex((s) => s.id === supplier.id);
+      if (idx >= 0) {
+        memoryCache.suppliers[idx] = supplier;
+      } else {
+        memoryCache.suppliers.push(supplier);
+      }
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  async deleteSupplier(id: string): Promise<boolean> {
+    const ok = await deleteSupplierFromSupabase(id);
+    if (ok) {
+      memoryCache.suppliers = memoryCache.suppliers.filter((s) => s.id !== id);
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  // ============================================================================
+  // 4. COURIER PARTNERS
+  // ============================================================================
+
+  getCourierPartners(): CourierPartner[] {
+    return memoryCache.couriers;
+  },
+
+  async saveCourierPartner(courier: CourierPartner): Promise<boolean> {
+    const ok = await saveCourierToSupabase(courier);
+    if (ok) {
+      const idx = memoryCache.couriers.findIndex((c) => c.id === courier.id);
+      if (idx >= 0) {
+        memoryCache.couriers[idx] = courier;
+      } else {
+        memoryCache.couriers.push(courier);
+      }
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  async deleteCourierPartner(id: string): Promise<boolean> {
+    const ok = await deleteCourierFromSupabase(id);
+    if (ok) {
+      memoryCache.couriers = memoryCache.couriers.filter((c) => c.id !== id);
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  // ============================================================================
+  // 5. ORDERS
+  // ============================================================================
+
+  getOrders(): Order[] {
+    return memoryCache.orders;
   },
 
   getOrderById(id: string): Order | undefined {
-    return this.getOrders().find((o) => o.id === id || o.orderNumber === id);
+    return memoryCache.orders.find((o) => o.id === id || o.orderNumber === id);
   },
 
-  createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'>): Order {
-    const orders = this.getOrders();
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  async createOrder(
+    orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt'> & { idempotencyKey?: string }
+  ): Promise<Order> {
+    const payload = {
+      customer_name: orderData.customerName,
+      customer_email: orderData.customerEmail,
+      customer_phone: orderData.customerPhone,
+      shipping_address: orderData.shippingAddress,
+      items: orderData.items.map((i) => ({
+        productId: i.productId,
+        variantId: i.variantId || null,
+        quantity: i.quantity,
+      })),
+      coupon_code: orderData.couponCode,
+      payment_method: orderData.paymentMethod,
+      utr_number: orderData.utrNumber,
+      payment_proof_url: orderData.paymentProofUrl,
+      idempotency_key: orderData.idempotencyKey || `idem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    };
+
+    const rpcRes = await placeOrderViaRpc(payload);
+    if (!rpcRes.success || !rpcRes.data) {
+      throw new Error(rpcRes.error || 'Failed to place order.');
+    }
+
     const newOrder: Order = {
       ...orderData,
-      id: `ord-${Date.now()}`,
-      orderNumber: `NIRAI-2026-${randomSuffix}`,
+      id: rpcRes.data.orderId,
+      orderNumber: rpcRes.data.orderNumber,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // Deduct stock for each ordered item
-    const products = this.getProducts();
-    newOrder.items.forEach((item) => {
-      const pIdx = products.findIndex((p) => p.id === item.productId);
-      if (pIdx >= 0) {
-        const product = products[pIdx];
-        const prevStock = product.stock;
-        const newStock = Math.max(0, prevStock - item.quantity);
-        product.stock = newStock;
-
-        // Also adjust variant stock if present
-        if (item.variantId && product.variants) {
-          const vIdx = product.variants.findIndex((v) => v.id === item.variantId);
-          if (vIdx >= 0) {
-            product.variants[vIdx].stock = Math.max(0, product.variants[vIdx].stock - item.quantity);
-          }
-        }
-
-        this.logStockMovement({
-          productId: product.id,
-          productName: product.nameEn,
-          sku: item.sku,
-          type: 'SALE',
-          quantityDelta: -item.quantity,
-          previousStock: prevStock,
-          newStock: newStock,
-          reason: `Order Placed #${newOrder.orderNumber}`,
-          performedBy: newOrder.customerName,
-        });
-      }
-    });
-
-    setItem(KEYS.PRODUCTS, products);
-    orders.unshift(newOrder);
-    setItem(KEYS.ORDERS, orders);
-    saveOrderToSupabase(newOrder).catch(() => {});
+    // Prepend to local memory cache so storefront immediately reflects order without full re-fetch
+    memoryCache.orders = [newOrder, ...memoryCache.orders.filter((o) => o.id !== newOrder.id)];
+    notifyListeners();
     return newOrder;
   },
 
-  updateOrderStatus(
+  async updateOrderStatus(
     orderId: string,
     status: OrderStatus,
     paymentStatus?: PaymentStatus,
     shippingDetails?: Order['shippingDetails'],
     extraFields?: { utrNumber?: string; notes?: string }
-  ): void {
-    const list = this.getOrders();
-    const idx = list.findIndex((o) => o.id === orderId);
-    if (idx >= 0) {
-      list[idx].status = status;
-      if (paymentStatus) {
-        list[idx].paymentStatus = paymentStatus;
-      }
+  ): Promise<boolean> {
+    const rpcRes = await updateOrderStatusViaRpc(
+      orderId,
+      status,
+      paymentStatus,
+      shippingDetails,
+      extraFields?.notes
+    );
+
+    if (!rpcRes.success) {
+      console.error('Server status transition rejected:', rpcRes.error);
+      throw new Error(rpcRes.error || 'Server rejected order status transition.');
+    }
+
+    const order = memoryCache.orders.find((o) => o.id === orderId);
+    if (order) {
+      order.status = status;
+      if (paymentStatus) order.paymentStatus = paymentStatus;
       if (shippingDetails) {
-        list[idx].shippingDetails = {
-          ...list[idx].shippingDetails,
-          ...shippingDetails,
-        };
+        order.shippingDetails = { ...order.shippingDetails, ...shippingDetails };
       }
-      if (extraFields?.utrNumber !== undefined) {
-        list[idx].utrNumber = extraFields.utrNumber;
-      }
-      if (extraFields?.notes !== undefined) {
-        list[idx].notes = extraFields.notes;
-      }
-      list[idx].updatedAt = new Date().toISOString();
-
-      // If order is cancelled, restore stock
-      if (status === 'Cancelled') {
-        const products = this.getProducts();
-        list[idx].items.forEach((item) => {
-          const pIdx = products.findIndex((p) => p.id === item.productId);
-          if (pIdx >= 0) {
-            const product = products[pIdx];
-            const prevStock = product.stock;
-            product.stock += item.quantity;
-            this.logStockMovement({
-              productId: product.id,
-              productName: product.nameEn,
-              sku: item.sku,
-              type: 'RETURN',
-              quantityDelta: item.quantity,
-              previousStock: prevStock,
-              newStock: product.stock,
-              reason: `Order Cancelled #${list[idx].orderNumber}`,
-              performedBy: 'Admin',
-            });
-          }
-        });
-        setItem(KEYS.PRODUCTS, products);
-      }
-
-      setItem(KEYS.ORDERS, list);
-      saveOrderToSupabase(list[idx]).catch(() => {});
+      if (extraFields?.utrNumber !== undefined) order.utrNumber = extraFields.utrNumber;
+      if (extraFields?.notes !== undefined) order.notes = extraFields.notes;
+      order.updatedAt = new Date().toISOString();
     }
+
+    notifyListeners();
+    return true;
   },
 
+  async cancelOrder(orderId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    const rpcRes = await cancelOrderViaRpc(orderId, reason);
+    if (!rpcRes.success) {
+      return { success: false, error: rpcRes.error };
+    }
 
-  // INVENTORY & STOCK MOVEMENTS
+    const order = memoryCache.orders.find((o) => o.id === orderId);
+    if (order) {
+      order.status = 'Cancelled';
+      order.updatedAt = new Date().toISOString();
+      notifyListeners();
+    }
+
+    return { success: true };
+  },
+
+  // ============================================================================
+  // PAYMENT VERIFICATION & SETTINGS (Secure RPCs)
+  // ============================================================================
+
+  async getPaymentInstructions(
+    orderId?: string,
+    orderNumber?: string,
+    phone?: string
+  ): Promise<{ success: boolean; data?: PaymentInstructions; error?: string }> {
+    return getPaymentInstructionsViaRpc(orderId, orderNumber, phone);
+  },
+
+  async submitPaymentProof(params: {
+    orderNumber: string;
+    phone: string;
+    utr: string;
+    method: string;
+    amountPaid: number;
+    payerName: string;
+    screenshotPath?: string;
+  }): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await submitPaymentProofViaRpc(params);
+    if (res.success) {
+      const order = memoryCache.orders.find(
+        (o) => o.orderNumber.toUpperCase() === params.orderNumber.trim().toUpperCase()
+      );
+      if (order) {
+        order.paymentStatus = 'Verification Pending';
+        order.utrNumber = params.utr.trim();
+        order.updatedAt = new Date().toISOString();
+        notifyListeners();
+      }
+    }
+    return res;
+  },
+
+  async verifyPayment(
+    submissionId: string,
+    notes?: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await verifyPaymentViaRpc(submissionId, notes);
+    if (res.success) {
+      if (res.data?.order_id) {
+        const order = memoryCache.orders.find((o) => o.id === res.data.order_id);
+        if (order) {
+          order.paymentStatus = 'Paid';
+          order.status = 'Confirmed';
+          order.updatedAt = new Date().toISOString();
+        }
+      }
+      notifyListeners();
+    }
+    return res;
+  },
+
+  async rejectPayment(
+    submissionId: string,
+    reason: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await rejectPaymentViaRpc(submissionId, reason);
+    if (res.success) {
+      if (res.data?.order_id) {
+        const order = memoryCache.orders.find((o) => o.id === res.data.order_id);
+        if (order) {
+          order.paymentStatus = 'Rejected';
+          order.updatedAt = new Date().toISOString();
+        }
+      }
+      notifyListeners();
+    }
+    return res;
+  },
+
+  async markOrderPaidManually(
+    orderId: string,
+    notes: string
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const res = await markOrderPaidManuallyViaRpc(orderId, notes);
+    if (res.success) {
+      const order = memoryCache.orders.find((o) => o.id === orderId);
+      if (order) {
+        order.paymentStatus = 'Paid';
+        order.status = 'Confirmed';
+        order.updatedAt = new Date().toISOString();
+        notifyListeners();
+      }
+    }
+    return res;
+  },
+
+  async getPaymentSubmissions(orderId: string): Promise<PaymentSubmission[]> {
+    return fetchPaymentSubmissionsForOrder(orderId);
+  },
+
+  async getPendingPaymentSubmissions(): Promise<PaymentSubmission[]> {
+    return fetchPendingPaymentSubmissions();
+  },
+
+  async getPaymentSettings(): Promise<PaymentSettings | null> {
+    return fetchPaymentSettingsFromSupabase();
+  },
+
+  async savePaymentSettings(
+    settings: Partial<PaymentSettings>
+  ): Promise<{ success: boolean; error?: string }> {
+    return savePaymentSettingsToSupabase(settings);
+  },
+
+  async uploadPaymentProof(
+    orderId: string,
+    file: File
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    return uploadPaymentProof(orderId, file);
+  },
+
+  async getSignedPaymentProofUrl(path: string): Promise<string | null> {
+    return getSignedPaymentProofUrl(path);
+  },
+
+  async uploadPaymentQrImage(
+    file: File
+  ): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
+    return uploadPaymentQrImage(file);
+  },
+
+  // ============================================================================
+  // 6. INVENTORY & STOCK MOVEMENTS (Audited via DB Triggers & RPC)
+  // ============================================================================
+
   getStockMovements(): StockMovement[] {
-    return getItem<StockMovement[]>(KEYS.STOCK_MOVEMENTS, [
-      {
-        id: 'mov-1',
-        productId: 'prod-kanchi-maroon',
-        productName: 'Vaanam Kanchipuram Pure Silk Saree',
-        sku: 'NIR-SAR-001-RD',
-        type: 'RECEIPT',
-        quantityDelta: 15,
-        previousStock: 0,
-        newStock: 15,
-        reason: 'Received shipment from Kanchi Weavers Guild',
-        performedBy: 'Admin (Ramanathan)',
-        timestamp: '2026-09-01T10:00:00Z',
-      },
-      {
-        id: 'mov-2',
-        productId: 'prod-kanchi-maroon',
-        productName: 'Vaanam Kanchipuram Pure Silk Saree',
-        sku: 'NIR-SAR-001-RD',
-        type: 'SALE',
-        quantityDelta: -1,
-        previousStock: 15,
-        newStock: 14,
-        reason: 'Order Placed #NIRAI-2026-9042',
-        performedBy: 'Priya Sundaram',
-        timestamp: '2026-09-23T14:20:00Z',
-      },
-    ]);
+    return memoryCache.stockMovements;
   },
 
-  logStockMovement(movement: Omit<StockMovement, 'id' | 'timestamp'>): void {
-    const list = this.getStockMovements();
-    const newEntry: StockMovement = {
-      ...movement,
-      id: `mov-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      timestamp: new Date().toISOString(),
-    };
-    list.unshift(newEntry);
-    setItem(KEYS.STOCK_MOVEMENTS, list);
-  },
-
-  // COUPONS
-  getCoupons(): Coupon[] {
-    return getItem<Coupon[]>(KEYS.COUPONS, initialCoupons);
-  },
-
-  saveCoupon(coupon: Coupon): void {
-    const list = this.getCoupons();
-    const idx = list.findIndex((c) => c.id === coupon.id);
-    if (idx >= 0) {
-      list[idx] = coupon;
-    } else {
-      list.push(coupon);
+  async adjustProductStock(
+    productId: string,
+    delta: number,
+    reason: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const res = await adjustStockViaRpc(productId, delta, reason);
+    if (res.success) {
+      // Refresh products and stock movements from Supabase
+      const [freshProducts, freshMovements] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchStockMovementsFromSupabase(),
+      ]);
+      if (freshProducts) memoryCache.products = freshProducts;
+      if (freshMovements) memoryCache.stockMovements = freshMovements;
+      notifyListeners();
     }
-    setItem(KEYS.COUPONS, list);
-    saveCouponToSupabase(coupon).catch(() => {});
+    return res;
   },
 
-  deleteCoupon(id: string): void {
-    const list = this.getCoupons().filter((c) => c.id !== id);
-    setItem(KEYS.COUPONS, list);
-    deleteCouponFromSupabase(id).catch(() => {});
+  // ============================================================================
+  // 7. COUPONS
+  // ============================================================================
+
+  getCoupons(): Coupon[] {
+    return memoryCache.coupons;
+  },
+
+  async saveCoupon(coupon: Coupon): Promise<boolean> {
+    const ok = await saveCouponToSupabase(coupon);
+    if (ok) {
+      const idx = memoryCache.coupons.findIndex((c) => c.id === coupon.id);
+      if (idx >= 0) {
+        memoryCache.coupons[idx] = coupon;
+      } else {
+        memoryCache.coupons.push(coupon);
+      }
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  async deleteCoupon(id: string): Promise<boolean> {
+    const ok = await deleteCouponFromSupabase(id);
+    if (ok) {
+      memoryCache.coupons = memoryCache.coupons.filter((c) => c.id !== id);
+      notifyListeners();
+    }
+    return ok;
   },
 
   validateCoupon(code: string, subtotal: number): { valid: boolean; coupon?: Coupon; error?: string } {
     const normalized = code.trim().toUpperCase();
-    const coupon = this.getCoupons().find((c) => c.code.toUpperCase() === normalized && c.isActive);
+    const coupon = memoryCache.coupons.find(
+      (c) => c.code.toUpperCase() === normalized && c.isActive
+    );
     if (!coupon) {
-      return { valid: false, error: 'Invalid or expired coupon code' };
+      return { valid: false, error: 'Invalid or inactive coupon code' };
     }
     if (new Date(coupon.validUntil) < new Date()) {
       return { valid: false, error: 'This coupon has expired' };
@@ -462,341 +710,201 @@ export const StorageService = {
     if (subtotal < coupon.minOrderAmount) {
       return {
         valid: false,
-        error: `Minimum order amount for this coupon is ₹${coupon.minOrderAmount.toLocaleString()}`,
+        error: `Minimum order amount for coupon ${coupon.code} is ₹${coupon.minOrderAmount.toLocaleString()}`,
       };
     }
     return { valid: true, coupon };
   },
 
-  // BANNERS
+  // ============================================================================
+  // 8. BANNERS
+  // ============================================================================
+
   getBanners(): Banner[] {
-    return getItem<Banner[]>(KEYS.BANNERS, initialBanners);
+    return memoryCache.banners;
   },
 
   saveBanner(banner: Banner): void {
-    const list = this.getBanners();
-    const idx = list.findIndex((b) => b.id === banner.id);
+    const idx = memoryCache.banners.findIndex((b) => b.id === banner.id);
     if (idx >= 0) {
-      list[idx] = banner;
+      memoryCache.banners[idx] = banner;
     } else {
-      list.push(banner);
+      memoryCache.banners.push(banner);
     }
-    setItem(KEYS.BANNERS, list);
+    notifyListeners();
   },
 
   deleteBanner(id: string): void {
-    const list = this.getBanners().filter((b) => b.id !== id);
-    setItem(KEYS.BANNERS, list);
+    memoryCache.banners = memoryCache.banners.filter((b) => b.id !== id);
+    notifyListeners();
   },
 
-  // STORE SETTINGS
+  // ============================================================================
+  // 9. STORE SETTINGS
+  // ============================================================================
+
   getSettings(): StoreSettings {
-    const saved = getItem<Partial<StoreSettings>>(KEYS.SETTINGS, initialStoreSettings);
-    // Deep merge defaults to protect against older partial local storage objects
-    return {
-      ...initialStoreSettings,
-      ...saved,
-      logo: {
-        ...initialStoreSettings.logo,
-        ...(saved.logo || {}),
-      },
-      heroSlides: saved.heroSlides && saved.heroSlides.length > 0
-        ? saved.heroSlides
-        : initialStoreSettings.heroSlides,
-      promoBanner: {
-        ...initialStoreSettings.promoBanner,
-        ...(saved.promoBanner || {}),
-      },
-      homepageSections: saved.homepageSections && saved.homepageSections.length > 0
-        ? saved.homepageSections
-        : initialStoreSettings.homepageSections,
-    };
+    return memoryCache.settings;
   },
 
-  saveSettings(settings: StoreSettings): void {
-    setItem(KEYS.SETTINGS, settings);
-    saveSettingsToSupabase(settings).catch(() => {});
-  },
-
-  // MEDIA LIBRARY
-  getMediaItems(): MediaItem[] {
-    return getItem<MediaItem[]>(KEYS.MEDIA, initialMediaItems);
-  },
-
-  saveMediaItem(media: MediaItem): void {
-    const list = this.getMediaItems();
-    const idx = list.findIndex((m) => m.id === media.id);
-    if (idx >= 0) {
-      list[idx] = media;
-    } else {
-      list.unshift(media);
+  async saveSettings(settings: StoreSettings): Promise<boolean> {
+    const ok = await saveSettingsToSupabase(settings);
+    if (ok) {
+      memoryCache.settings = settings;
+      notifyListeners();
     }
-    setItem(KEYS.MEDIA, list);
+    return ok;
   },
 
-  deleteMediaItem(id: string): void {
-    const list = this.getMediaItems().filter((m) => m.id !== id);
-    setItem(KEYS.MEDIA, list);
-  },
-
-  // HERO SLIDES
   getHeroSlides(): HeroSlide[] {
-    const settings = this.getSettings();
-    return settings.heroSlides.sort((a, b) => a.order - b.order);
+    return [...(memoryCache.settings.heroSlides || [])].sort((a, b) => a.order - b.order);
   },
 
-  saveHeroSlide(slide: HeroSlide): void {
+  async saveHeroSlide(slide: HeroSlide): Promise<boolean> {
     const settings = this.getSettings();
-    const slides = [...settings.heroSlides];
+    const slides = [...(settings.heroSlides || [])];
     const idx = slides.findIndex((s) => s.id === slide.id);
     if (idx >= 0) {
       slides[idx] = slide;
     } else {
       slides.push(slide);
     }
-    this.saveSettings({ ...settings, heroSlides: slides });
+    return this.saveSettings({ ...settings, heroSlides: slides });
   },
 
-  deleteHeroSlide(id: string): void {
+  async deleteHeroSlide(id: string): Promise<boolean> {
     const settings = this.getSettings();
-    const slides = settings.heroSlides.filter((s) => s.id !== id);
-    this.saveSettings({ ...settings, heroSlides: slides });
+    const slides = (settings.heroSlides || []).filter((s) => s.id !== id);
+    return this.saveSettings({ ...settings, heroSlides: slides });
   },
 
-  reorderHeroSlides(slides: HeroSlide[]): void {
+  async reorderHeroSlides(slides: HeroSlide[]): Promise<boolean> {
     const settings = this.getSettings();
-    this.saveSettings({ ...settings, heroSlides: slides });
+    return this.saveSettings({ ...settings, heroSlides: slides });
   },
 
-  // PROMOTIONAL BANNER
   getPromoBanner(): PromoBannerConfig {
-    return this.getSettings().promoBanner;
+    return memoryCache.settings.promoBanner;
   },
 
-  savePromoBanner(promo: PromoBannerConfig): void {
+  async savePromoBanner(promo: PromoBannerConfig): Promise<boolean> {
     const settings = this.getSettings();
-    this.saveSettings({ ...settings, promoBanner: promo });
+    return this.saveSettings({ ...settings, promoBanner: promo });
   },
 
-  // HOMEPAGE SECTIONS
   getHomepageSections(): HomepageSectionItem[] {
-    const settings = this.getSettings();
-    return settings.homepageSections.sort((a, b) => a.order - b.order);
+    return [...(memoryCache.settings.homepageSections || [])].sort((a, b) => a.order - b.order);
   },
 
-  saveHomepageSections(sections: HomepageSectionItem[]): void {
+  async saveHomepageSections(sections: HomepageSectionItem[]): Promise<boolean> {
     const settings = this.getSettings();
-    this.saveSettings({ ...settings, homepageSections: sections });
+    return this.saveSettings({ ...settings, homepageSections: sections });
   },
 
-  // LOGO SETTINGS
   getLogoSettings(): LogoSettings {
-    return this.getSettings().logo;
+    return memoryCache.settings.logo;
   },
 
-  saveLogoSettings(logo: LogoSettings): void {
+  async saveLogoSettings(logo: LogoSettings): Promise<boolean> {
     const settings = this.getSettings();
-    this.saveSettings({ ...settings, logo });
+    return this.saveSettings({ ...settings, logo });
   },
 
-  // NEW ARRIVALS
-  getNewArrivals(): Product[] {
-    const products = this.getPublicProducts();
-    // Return products tagged isNewArrival or newest products
-    const tagged = products.filter((p) => p.isNewArrival);
-    if (tagged.length >= 4) return tagged;
-    // Otherwise sort by createdAt descending
-    return [...products].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // ============================================================================
+  // 10. MEDIA LIBRARY
+  // ============================================================================
+
+  getMediaItems(): MediaItem[] {
+    return memoryCache.mediaItems;
   },
 
-  toggleProductFeatured(productId: string): boolean {
-    const products = this.getProducts();
-    const p = products.find((prod) => prod.id === productId);
-    if (p) {
-      p.isFeatured = !p.isFeatured;
-      setItem(KEYS.PRODUCTS, products);
-      return p.isFeatured;
-    }
-    return false;
-  },
-
-  toggleProductNewArrival(productId: string): boolean {
-    const products = this.getProducts();
-    const p = products.find((prod) => prod.id === productId);
-    if (p) {
-      p.isNewArrival = !p.isNewArrival;
-      setItem(KEYS.PRODUCTS, products);
-      return !!p.isNewArrival;
-    }
-    return false;
-  },
-
-  reorderCategories(categoryIds: string[]): void {
-    const categories = this.getCategories();
-    categoryIds.forEach((id, idx) => {
-      const cat = categories.find((c) => c.id === id);
-      if (cat) cat.order = idx + 1;
+  async saveMediaItem(media: MediaItem): Promise<boolean> {
+    const ok = await saveMediaItemToSupabase({
+      url: media.url,
+      secureUrl: media.url,
+      publicId: media.publicId,
+      category: media.category,
+      altText: media.altText,
+      width: media.width,
+      height: media.height,
+      format: media.format,
+      bytes: media.fileSize,
     });
-    setItem(KEYS.CATEGORIES, categories);
-  },
-
-  // USERS
-  getUsers(): User[] {
-    return getItem<User[]>(KEYS.USERS, initialUsers);
-  },
-
-  saveUser(user: User): void {
-    const list = this.getUsers();
-    const idx = list.findIndex((u) => u.id === user.id);
-    if (idx >= 0) {
-      list[idx] = user;
-    } else {
-      list.push(user);
-    }
-    setItem(KEYS.USERS, list);
-    saveUserToSupabase(user).catch(() => {});
-  },
-
-  // ACTIVE USER & DEVICE ISOLATION
-  getActiveUser(): User | null {
-    try {
-      const raw = localStorage.getItem(KEYS.ACTIVE_USER) || sessionStorage.getItem(KEYS.ACTIVE_USER);
-      if (!raw) return null;
-      const user = JSON.parse(raw);
-      // Auto-purge legacy demo sessions per requirements so shared URLs open in clean Guest Mode
-      if (
-        user?.email === 'priya@example.com' ||
-        user?.email === 'rajesh.kannan@example.com' ||
-        user?.id === 'cust-1' ||
-        user?.id === 'cust-2'
-      ) {
-        localStorage.removeItem(KEYS.ACTIVE_USER);
-        sessionStorage.removeItem(KEYS.ACTIVE_USER);
-        return null;
+    if (ok) {
+      const idx = memoryCache.mediaItems.findIndex((m) => m.id === media.id);
+      if (idx >= 0) {
+        memoryCache.mediaItems[idx] = media;
+      } else {
+        memoryCache.mediaItems.unshift(media);
       }
-      return user;
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  async deleteMediaItem(id: string): Promise<boolean> {
+    const item = memoryCache.mediaItems.find((m) => m.id === id || m.publicId === id);
+    if (!item) return false;
+    const ok = await deleteMediaItemFromSupabase(item.publicId);
+    if (ok) {
+      memoryCache.mediaItems = memoryCache.mediaItems.filter(
+        (m) => m.id !== id && m.publicId !== id
+      );
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  // ============================================================================
+  // 11. USERS & PROFILES
+  // ============================================================================
+
+  getUsers(): User[] {
+    return memoryCache.users;
+  },
+
+  async saveUser(user: User): Promise<boolean> {
+    const ok = await saveUserToSupabase(user);
+    if (ok) {
+      const idx = memoryCache.users.findIndex((u) => u.id === user.id);
+      if (idx >= 0) {
+        memoryCache.users[idx] = user;
+      } else {
+        memoryCache.users.push(user);
+      }
+      notifyListeners();
+    }
+    return ok;
+  },
+
+  // ============================================================================
+  // 12. WISHLIST (Guest LocalStorage & Logged-in Supabase)
+  // ============================================================================
+
+  getGuestWishlist(): string[] {
+    try {
+      const raw = localStorage.getItem(CLIENT_STORAGE_KEYS.GUEST_WISHLIST);
+      return raw ? JSON.parse(raw) : [];
     } catch {
-      return null;
+      return [];
     }
   },
 
-  setActiveUser(user: User | null): void {
-    if (!user) {
-      localStorage.removeItem(KEYS.ACTIVE_USER);
-      sessionStorage.removeItem(KEYS.ACTIVE_USER);
-    } else {
-      localStorage.setItem(KEYS.ACTIVE_USER, JSON.stringify(user));
+  setGuestWishlist(ids: string[]): void {
+    try {
+      localStorage.setItem(CLIENT_STORAGE_KEYS.GUEST_WISHLIST, JSON.stringify(ids));
+    } catch (e) {
+      console.error('Error saving guest wishlist:', e);
     }
     notifyListeners();
   },
 
-  registerCustomer(params: {
-    name: string;
-    email: string;
-    phone?: string;
-    password?: string;
-    address?: import('../types').Address;
-  }): User {
-    const users = this.getUsers();
-    const existing = users.find((u) => u.email.toLowerCase() === params.email.trim().toLowerCase());
-    if (existing) {
-      if (params.password) existing.password = params.password;
-      if (params.phone) existing.phone = params.phone;
-      if (params.address) {
-        existing.addresses = [params.address, ...(existing.addresses || []).filter((a) => a.id !== params.address!.id)];
-      }
-      this.saveUser(existing);
-      this.setActiveUser(existing);
-      return existing;
-    }
-
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const newUser: User = {
-      id: `cust-${Date.now()}-${randomSuffix}`,
-      name: params.name.trim(),
-      email: params.email.trim().toLowerCase(),
-      phone: params.phone?.trim(),
-      role: 'customer',
-      password: params.password,
-      addresses: params.address ? [params.address] : [],
-      isActive: true,
-      createdAt: new Date().toISOString(),
-    };
-
-    this.saveUser(newUser);
-    this.setActiveUser(newUser);
-    return newUser;
-  },
-
-  // SUPABASE ASYNC SYNC & REAL-TIME REFRESH
-  async initSupabaseSync(): Promise<void> {
-    try {
-      // 1. Purge legacy demo sessions on initial page load per requirements
-      const currentActive = localStorage.getItem(KEYS.ACTIVE_USER);
-      if (currentActive) {
-        try {
-          const parsed = JSON.parse(currentActive);
-          if (
-            parsed?.email === 'priya@example.com' ||
-            parsed?.email === 'rajesh.kannan@example.com' ||
-            parsed?.id === 'cust-1'
-          ) {
-            localStorage.removeItem(KEYS.ACTIVE_USER);
-          }
-        } catch {}
-      }
-
-      // 2. Check connection and auto-seed Supabase if tables are newly created and empty
-      await autoSeedSupabaseIfEmpty({
-        products: initialProducts,
-        categories: initialCategories,
-        coupons: initialCoupons,
-        settings: initialStoreSettings,
-      });
-
-      // 3. Fetch remote updates
-      const [remoteProducts, remoteCategories, remoteOrders, remoteUsers, remoteCoupons, remoteSettings] =
-        await Promise.all([
-          fetchProductsFromSupabase(),
-          fetchCategoriesFromSupabase(),
-          fetchOrdersFromSupabase(),
-          fetchUsersFromSupabase(),
-          fetchCouponsFromSupabase(),
-          fetchSettingsFromSupabase(),
-        ]);
-
-      if (remoteProducts && remoteProducts.length > 0) {
-        localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(remoteProducts));
-      }
-      if (remoteCategories && remoteCategories.length > 0) {
-        localStorage.setItem(KEYS.CATEGORIES, JSON.stringify(remoteCategories));
-      }
-      if (remoteOrders && remoteOrders.length > 0) {
-        localStorage.setItem(KEYS.ORDERS, JSON.stringify(remoteOrders));
-      }
-      if (remoteUsers && remoteUsers.length > 0) {
-        localStorage.setItem(KEYS.USERS, JSON.stringify(remoteUsers));
-      }
-      if (remoteCoupons && remoteCoupons.length > 0) {
-        localStorage.setItem(KEYS.COUPONS, JSON.stringify(remoteCoupons));
-      }
-      if (remoteSettings) {
-        localStorage.setItem(KEYS.SETTINGS, JSON.stringify(remoteSettings));
-      }
-
-      notifyListeners();
-    } catch (err) {
-      console.warn('Supabase sync note (using resilient local cache):', err);
-    }
-  },
-
-  // WISHLIST
   getWishlist(): string[] {
-    return getItem<string[]>(KEYS.WISHLIST, ['prod-kanchi-maroon']);
+    return this.getGuestWishlist();
   },
 
   toggleWishlist(productId: string): boolean {
-    const list = this.getWishlist();
+    const list = this.getGuestWishlist();
     const idx = list.indexOf(productId);
     let added = false;
     if (idx >= 0) {
@@ -805,58 +913,90 @@ export const StorageService = {
       list.push(productId);
       added = true;
     }
-    setItem(KEYS.WISHLIST, list);
+    this.setGuestWishlist(list);
     return added;
   },
 
-  // REVIEWS
-  addReview(productId: string, review: Omit<Product['reviews'][0], 'id' | 'date'>): void {
-    const products = this.getProducts();
-    const pIdx = products.findIndex((p) => p.id === productId);
-    if (pIdx >= 0) {
-      const prod = products[pIdx];
-      const newReview = {
-        ...review,
-        id: `rev-${Date.now()}`,
-        date: new Date().toISOString().split('T')[0],
-      };
-      prod.reviews = [newReview, ...(prod.reviews || [])];
-      prod.reviewCount = prod.reviews.length;
-      const totalStars = prod.reviews.reduce((acc, r) => acc + r.rating, 0);
-      prod.rating = Number((totalStars / prod.reviews.length).toFixed(1));
-      setItem(KEYS.PRODUCTS, products);
-    }
-  },
+  // ============================================================================
+  // 13. REAL-TIME DATA INITIALIZATION & SYNC
+  // ============================================================================
 
-  deleteReview(productId: string, reviewId: string): void {
-    const products = this.getProducts();
-    const pIdx = products.findIndex((p) => p.id === productId);
-    if (pIdx >= 0) {
-      const prod = products[pIdx];
-      prod.reviews = (prod.reviews || []).filter((r) => r.id !== reviewId);
-      prod.reviewCount = prod.reviews.length;
-      if (prod.reviews.length > 0) {
-        const totalStars = prod.reviews.reduce((acc, r) => acc + r.rating, 0);
-        prod.rating = Number((totalStars / prod.reviews.length).toFixed(1));
-      } else {
-        prod.rating = 5.0;
+  async initSupabaseSync(): Promise<{ success: boolean; error?: string }> {
+    try {
+      memoryCache.fetchError = null;
+
+      // Storefront initial load: only load essentials (active catalog, categories, store settings)
+      // This saves 7 unnecessary admin table requests on initial load
+      const [remoteProducts, remoteCategories, remoteSettings] = await Promise.all([
+        fetchActiveProductsForStorefront(),
+        fetchCategoriesFromSupabase(),
+        fetchSettingsFromSupabase(),
+      ]);
+
+      // If both products and categories failed to load, register an error state
+      if (!remoteProducts && !remoteCategories) {
+        const errorMsg = 'Unable to fetch store catalog from Supabase. Please verify connection.';
+        memoryCache.fetchError = errorMsg;
+        notifyListeners();
+        return { success: false, error: errorMsg };
       }
-      setItem(KEYS.PRODUCTS, products);
+
+      if (remoteProducts) memoryCache.products = remoteProducts;
+      if (remoteCategories) memoryCache.categories = remoteCategories;
+      if (remoteSettings) memoryCache.settings = remoteSettings;
+
+      memoryCache.isLoaded = true;
+      notifyListeners();
+      return { success: true };
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Error syncing data from Supabase.';
+      memoryCache.fetchError = errorMsg;
+      notifyListeners();
+      return { success: false, error: errorMsg };
     }
   },
 
-  // Reset to initial seed data
-  resetToDefaults(): void {
-    localStorage.clear();
-    setItem(KEYS.PRODUCTS, initialProducts);
-    setItem(KEYS.CATEGORIES, initialCategories);
-    setItem(KEYS.SUPPLIERS, initialSuppliers);
-    setItem(KEYS.COURIERS, initialCouriers);
-    setItem(KEYS.COUPONS, initialCoupons);
-    setItem(KEYS.BANNERS, initialBanners);
-    setItem(KEYS.ORDERS, initialOrders);
-    setItem(KEYS.USERS, initialUsers);
-    setItem(KEYS.SETTINGS, initialStoreSettings);
-    setItem(KEYS.MEDIA, initialMediaItems);
+  /**
+   * Loaded on-demand when staff/admin logs into the admin portal
+   */
+  async syncAdminData(): Promise<void> {
+    try {
+      const [
+        remoteAllProducts,
+        remoteOrders,
+        remoteUsers,
+        remoteCoupons,
+        remoteSuppliers,
+        remoteCouriers,
+        remoteMedia,
+        remoteMovements,
+      ] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchOrdersFromSupabase(),
+        fetchUsersFromSupabase(),
+        fetchCouponsFromSupabase(),
+        fetchSuppliersFromSupabase(),
+        fetchCouriersFromSupabase(),
+        fetchMediaItemsFromSupabase(),
+        fetchStockMovementsFromSupabase(),
+      ]);
+
+      if (remoteAllProducts) memoryCache.products = remoteAllProducts;
+      if (remoteOrders) memoryCache.orders = remoteOrders;
+      if (remoteUsers) memoryCache.users = remoteUsers;
+      if (remoteCoupons) memoryCache.coupons = remoteCoupons;
+      if (remoteSuppliers) memoryCache.suppliers = remoteSuppliers;
+      if (remoteCouriers) memoryCache.couriers = remoteCouriers;
+      if (remoteMedia) memoryCache.mediaItems = remoteMedia;
+      if (remoteMovements) memoryCache.stockMovements = remoteMovements;
+
+      notifyListeners();
+    } catch (err) {
+      console.warn('Admin data sync note:', err);
+    }
+  },
+
+  async retrySync(): Promise<{ success: boolean; error?: string }> {
+    return this.initSupabaseSync();
   },
 };

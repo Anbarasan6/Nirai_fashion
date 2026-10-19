@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
 import {
@@ -31,6 +31,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   ExternalLink,
+  Clock,
+  CreditCard,
+  AlertCircle,
+  AlertTriangle,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 
 export const ContentManager: React.FC = () => {
@@ -69,6 +75,36 @@ export const ContentManager: React.FC = () => {
   const [bankBranch, setBankBranch] = useState(
     settings.bankDetails?.branch || 'Cathedral Road, Chennai'
   );
+  const [paymentDeadlineHours, setPaymentDeadlineHours] = useState(24);
+  const [codEnabled, setCodEnabled] = useState(false);
+  const [isUploadingQr, setIsUploadingQr] = useState(false);
+
+  // Emergency Maintenance Mode / Killswitch State
+  const [checkoutEnabled, setCheckoutEnabled] = useState<boolean>(settings.checkoutEnabled !== false);
+  const [maintenanceMessageEn, setMaintenanceMessageEn] = useState<string>(
+    settings.maintenanceMessageEn || 'Checkout is temporarily paused for scheduled inventory maintenance. Please check back shortly.'
+  );
+  const [maintenanceMessageTa, setMaintenanceMessageTa] = useState<string>(
+    settings.maintenanceMessageTa || 'பராமரிப்பு பணி காரணமாக செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது. விரைவில் மீண்டும் முயற்சிக்கவும்.'
+  );
+
+  // Fetch payment settings from Supabase payment_settings table
+  useEffect(() => {
+    StorageService.getPaymentSettings().then((ps) => {
+      if (ps) {
+        if (ps.upiId) setUpiId(ps.upiId);
+        if (ps.payeeName) setMerchantName(ps.payeeName);
+        if (ps.accountName) setBankAccountName(ps.accountName);
+        if (ps.accountNumber) setBankAccountNumber(ps.accountNumber);
+        if (ps.ifscCode) setBankIfscCode(ps.ifscCode);
+        if (ps.bankName) setBankName(ps.bankName);
+        if (ps.branch) setBankBranch(ps.branch);
+        if (ps.qrImagePath) setQrCodeImageUrl(ps.qrImagePath);
+        if (ps.paymentDeadlineHours) setPaymentDeadlineHours(ps.paymentDeadlineHours);
+        if (typeof ps.codEnabled === 'boolean') setCodEnabled(ps.codEnabled);
+      }
+    });
+  }, []);
 
   // 2. Footer Manager State
   const initialFooter: FooterConfig = settings.footerConfig || {
@@ -279,8 +315,8 @@ export const ContentManager: React.FC = () => {
     );
   };
 
-  // QR Code Image Upload Handler (converts to base64 data URL)
-  const handleQrImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // QR Code Image Upload Handler (uploads to payment-qr bucket)
+  const handleQrImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -289,104 +325,213 @@ export const ContentManager: React.FC = () => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setQrCodeImageUrl(reader.result);
-        showToast('QR Code image uploaded successfully', 'success');
+    setIsUploadingQr(true);
+    try {
+      const res = await StorageService.uploadPaymentQrImage(file);
+      if (res.success && res.publicUrl) {
+        setQrCodeImageUrl(res.publicUrl);
+        showToast('Static QR Code uploaded to payment-qr bucket successfully!', 'success');
+      } else {
+        showToast(res.error || 'Failed to upload QR image to bucket', 'error');
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      showToast(err.message || 'Error uploading QR Code', 'error');
+    } finally {
+      setIsUploadingQr(false);
+    }
   };
 
   // Main Form Submit Handler
-  const handleSaveAllSettings = (e: React.FormEvent) => {
+  const handleSaveAllSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 1. Validate UPI ID
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+    if (!upiRegex.test(upiId.trim())) {
+      showToast('Invalid UPI ID format. Expected format: name@bank (e.g. nirai@upi)', 'error');
+      return;
+    }
+
+    // 2. Validate Bank IFSC
+    const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    if (!ifscRegex.test(bankIfscCode.trim().toUpperCase())) {
+      showToast('Invalid IFSC format. Expected 11 uppercase alphanumeric characters (e.g. HDFC0001244)', 'error');
+      return;
+    }
+
+    // 3. Validate Bank Account Number
+    const accountNumRegex = /^\d{8,18}$/;
+    if (!accountNumRegex.test(bankAccountNumber.trim())) {
+      showToast('Invalid Account Number. Must be 8 to 18 digits numeric.', 'error');
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const updatedFooterConfig: FooterConfig = {
-      brandAboutEn: footerAboutEn,
-      brandAboutTa: footerAboutTa,
-      addressEn: footerAddressEn,
-      addressTa: footerAddressTa,
-      columns: footerColumns,
-      social: {
-        showSocialIcons,
-        instagramUrl,
-        facebookUrl,
-        twitterUrl,
-        whatsappUrl,
-      },
-      copyrightEn,
-      copyrightTa,
-    };
+    try {
+      // Save directly to the single-row payment_settings Supabase table (admin RLS protected)
+      const payRes = await StorageService.savePaymentSettings({
+        upiId: upiId.trim(),
+        payeeName: merchantName.trim(),
+        accountName: bankAccountName.trim(),
+        accountNumber: bankAccountNumber.trim(),
+        ifscCode: bankIfscCode.trim().toUpperCase(),
+        bankName: bankName.trim(),
+        branch: bankBranch.trim(),
+        qrImagePath: qrCodeImageUrl.trim(),
+        paymentDeadlineHours: Math.max(1, Number(paymentDeadlineHours) || 24),
+        codEnabled: Boolean(codEnabled),
+      });
 
-    const updatedBankDetails: BankDetails = {
-      bankName,
-      accountName: bankAccountName,
-      accountNumber: bankAccountNumber,
-      ifscCode: bankIfscCode,
-      branch: bankBranch,
-    };
+      if (!payRes.success) {
+        showToast(payRes.error || 'Failed to save payment settings to database', 'error');
+        setIsSubmitting(false);
+        return;
+      }
 
-    const updatedUpiDetails: UpiDetails = {
-      upiId: upiId.trim(),
-      merchantName: merchantName.trim(),
-      qrCodeNote: qrCodeNote.trim(),
-      qrCodeImageUrl: qrCodeImageUrl.trim(),
-    };
+      const updatedFooterConfig: FooterConfig = {
+        brandAboutEn: footerAboutEn,
+        brandAboutTa: footerAboutTa,
+        addressEn: footerAddressEn,
+        addressTa: footerAddressTa,
+        columns: footerColumns,
+        social: {
+          showSocialIcons,
+          instagramUrl,
+          facebookUrl,
+          twitterUrl,
+          whatsappUrl,
+        },
+        copyrightEn,
+        copyrightTa,
+      };
 
-    const updatedShippingRules: ShippingRules = {
-      tamilNaduStandard: Number(tnStandard),
-      tamilNaduExpress: Number(tnExpress),
-      indiaStandard: Number(indiaStandard),
-      indiaExpress: Number(indiaExpress),
-    };
+      const updatedBankDetails: BankDetails = {
+        bankName,
+        accountName: bankAccountName,
+        accountNumber: bankAccountNumber,
+        ifscCode: bankIfscCode,
+        branch: bankBranch,
+      };
 
-    const updatedSettings: StoreSettings = {
-      ...settings,
-      freeShippingThreshold: Number(freeShippingThreshold),
-      standardShippingFee: Number(indiaStandard),
-      shippingRules: updatedShippingRules,
-      bankDetails: updatedBankDetails,
-      upiDetails: updatedUpiDetails,
-      footerConfig: updatedFooterConfig,
-      announcementEn,
-      announcementTa,
-      isAnnouncementActive,
-      supportPhone,
-      supportEmail,
-    };
+      const updatedUpiDetails: UpiDetails = {
+        upiId: upiId.trim(),
+        merchantName: merchantName.trim(),
+        qrCodeNote: qrCodeNote.trim(),
+        qrCodeImageUrl: qrCodeImageUrl.trim(),
+      };
 
-    // Save Store Settings
-    StorageService.saveSettings(updatedSettings);
-    setSettings(updatedSettings);
+      const updatedShippingRules: ShippingRules = {
+        tamilNaduStandard: Number(tnStandard),
+        tamilNaduExpress: Number(tnExpress),
+        indiaStandard: Number(indiaStandard),
+        indiaExpress: Number(indiaExpress),
+      };
 
-    // Save Hero Showcase Banner
-    const updatedBanner: Banner = {
-      ...heroBanner,
-      titleEn: heroTitleEn,
-      titleTa: heroTitleTa,
-      subtitleEn: heroSubEn,
-      subtitleTa: heroSubTa,
-      imageUrl: heroImage,
-    };
-    StorageService.saveBanner(updatedBanner);
+      const updatedSettings: StoreSettings = {
+        ...settings,
+        freeShippingThreshold: Number(freeShippingThreshold),
+        standardShippingFee: Number(indiaStandard),
+        shippingRules: updatedShippingRules,
+        bankDetails: updatedBankDetails,
+        upiDetails: updatedUpiDetails,
+        footerConfig: updatedFooterConfig,
+        announcementEn,
+        announcementTa,
+        isAnnouncementActive,
+        supportPhone,
+        supportEmail,
+        checkoutEnabled,
+        maintenanceMessageEn,
+        maintenanceMessageTa,
+      };
 
-    refreshData();
+      // Save Store Settings
+      StorageService.saveSettings(updatedSettings);
+      setSettings(updatedSettings);
 
-    setTimeout(() => {
+      // Save Hero Showcase Banner
+      const updatedBanner: Banner = {
+        ...heroBanner,
+        titleEn: heroTitleEn,
+        titleTa: heroTitleTa,
+        subtitleEn: heroSubEn,
+        subtitleTa: heroSubTa,
+        imageUrl: heroImage,
+      };
+      StorageService.saveBanner(updatedBanner);
+
+      refreshData();
+      showToast('Payment settings, bank details, and storefront configuration published successfully!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to publish settings', 'error');
+    } finally {
       setIsSubmitting(false);
-      showToast(
-        'Storefront payment gateway, footer, regional rates, and banners published successfully!',
-        'success'
-      );
-    }, 250);
+    }
   };
 
   return (
     <div className="space-y-8 max-w-5xl pb-16">
       <form onSubmit={handleSaveAllSettings} className="space-y-8 text-xs">
+        {/* 0. EMERGENCY STORE MAINTENANCE & CHECKOUT KILLSWITCH */}
+        <div className={`p-6 rounded-xl border transition-all ${checkoutEnabled ? 'bg-white border-[#E2DBD0]' : 'bg-rose-50/50 border-rose-300'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${checkoutEnabled ? 'bg-amber-900/10 border-amber-900/20 text-amber-900' : 'bg-rose-100 border-rose-300 text-rose-700'}`}>
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  Emergency Maintenance Mode &amp; Checkout Killswitch
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Instantly pause storefront orders while keeping catalog browsing active.
+                </p>
+              </div>
+            </div>
+
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={checkoutEnabled}
+                onChange={(e) => setCheckoutEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-rose-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              <span className="ml-3 text-xs font-bold text-slate-900">
+                {checkoutEnabled ? 'Checkout Active' : 'Checkout Disabled'}
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                Maintenance Banner Message (English)
+              </label>
+              <textarea
+                rows={2}
+                value={maintenanceMessageEn}
+                onChange={(e) => setMaintenanceMessageEn(e.target.value)}
+                disabled={checkoutEnabled}
+                className="w-full p-2.5 border border-stone-300 rounded-lg text-xs focus:outline-none focus:border-amber-600 disabled:bg-stone-50 disabled:text-stone-400"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                பராமரிப்பு அறிவிப்பு (Tamil)
+              </label>
+              <textarea
+                rows={2}
+                value={maintenanceMessageTa}
+                onChange={(e) => setMaintenanceMessageTa(e.target.value)}
+                disabled={checkoutEnabled}
+                className="w-full p-2.5 border border-stone-300 rounded-lg text-xs focus:outline-none focus:border-amber-600 disabled:bg-stone-50 disabled:text-stone-400"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* 1. MERCHANT PAYMENT GATEWAY, UPI QR CODE & BANK ACCOUNT SETUP */}
         <div className="bg-white p-6 rounded-xl border border-[#E2DBD0] shadow-2xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
@@ -588,6 +733,118 @@ export const ContentManager: React.FC = () => {
                     className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-xs focus:outline-none focus:border-amber-600"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Payment Expiry Deadline & Cash On Delivery Configuration */}
+            <div className="pt-4 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Payment Window Deadline (Hours)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="168"
+                  value={paymentDeadlineHours}
+                  onChange={(e) => setPaymentDeadlineHours(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-white border border-stone-300 rounded-lg text-xs font-mono font-bold focus:outline-none focus:border-amber-600"
+                />
+                <p className="text-[11px] text-stone-400 mt-1">
+                  Default 24 hours. Orders in 'Awaiting Payment' past deadline are auto-expired and reserved stock is restored.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1 flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5 text-amber-800" />
+                  <span>Cash on Delivery (COD)</span>
+                </label>
+                <label className="flex items-start gap-2.5 p-3 rounded-lg border border-stone-200 bg-stone-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={codEnabled}
+                    onChange={(e) => setCodEnabled(e.target.checked)}
+                    className="mt-0.5 rounded text-amber-800 focus:ring-amber-800"
+                  />
+                  <div className="text-[11px]">
+                    <span className="font-bold text-slate-800 block">Allow COD Option at Checkout</span>
+                    <span className="text-stone-500">
+                      When disabled, customers must pay via UPI/Bank transfer and submit proof before orders are fulfilled.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* LIVE PREVIEW CARD */}
+            <div className="pt-4 border-t border-stone-100 space-y-2">
+              <div className="flex items-center gap-1.5 text-stone-700">
+                <Eye className="w-4 h-4 text-amber-800" />
+                <span className="font-serif font-bold text-xs uppercase tracking-wider text-slate-900">
+                  Live Customer Checkout Preview (How it appears on /pay/:orderNumber)
+                </span>
+              </div>
+
+              <div className="p-4 bg-gradient-to-br from-amber-50/60 to-stone-100 rounded-xl border border-amber-200/80 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 block">
+                      Payee / Merchant
+                    </span>
+                    <span className="font-serif font-bold text-slate-900 text-sm">
+                      {merchantName || 'Nirai Traditional Ethnic Apparel'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-amber-200/60 text-amber-950 font-mono font-bold rounded text-[11px]">
+                      UPI: {upiId || 'nirai@upi'}
+                    </span>
+                    <span className="px-2 py-0.5 bg-stone-200/80 text-stone-700 font-mono text-[10px] rounded">
+                      Deadline: {paymentDeadlineHours}h
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                  <div className="p-3 bg-white rounded-lg border border-amber-100 space-y-1">
+                    <span className="font-bold text-stone-500 block text-[10px] uppercase">
+                      Bank Account Number (Full)
+                    </span>
+                    <p className="font-mono font-bold text-slate-900 text-sm">
+                      {bankAccountNumber || '50200088992211'}
+                    </p>
+                    <p className="text-[10px] text-stone-400">
+                      Holder: {bankAccountName || 'NIRAI TRADITIONAL WEAR'}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-lg border border-amber-100 space-y-1">
+                    <span className="font-bold text-stone-500 block text-[10px] uppercase">
+                      IFSC &amp; Branch
+                    </span>
+                    <p className="font-mono font-bold text-slate-900 text-sm">
+                      {bankIfscCode || 'HDFC0001244'}
+                    </p>
+                    <p className="text-[10px] text-stone-400">
+                      {bankName || 'HDFC Bank Ltd'}, {bankBranch || 'Cathedral Road, Chennai'}
+                    </p>
+                  </div>
+                </div>
+
+                {qrCodeImageUrl && (
+                  <div className="flex items-center gap-3 pt-2">
+                    <img
+                      src={qrCodeImageUrl}
+                      alt="Merchant QR"
+                      className="w-12 h-12 object-contain bg-white rounded border border-stone-200 p-0.5 shrink-0"
+                    />
+                    <span className="text-[11px] text-stone-600">
+                      ✓ Fallback static QR image configured and active.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

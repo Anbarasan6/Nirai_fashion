@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../../context/ShopContext';
 import { StorageService } from '../../services/storage';
+import { fetchProductReviews, submitProductReview } from '../../services/supabase';
+import { ProductReview } from '../../types';
 import { ImageWithFallback } from '../common/ImageWithFallback';
 import { ProductCard } from './ProductCard';
 import {
@@ -25,6 +27,8 @@ export const ProductDetailPage: React.FC = () => {
     toggleWishlist,
     isInWishlist,
     storeSettings,
+    currentUser,
+    showToast,
   } = useShop();
 
   const product = StorageService.getPublicProducts().find(
@@ -36,10 +40,22 @@ export const ProductDetailPage: React.FC = () => {
   const [quantity, setQuantity] = useState(1);
   const [activeTabSection, setActiveTabSection] = useState<'desc' | 'specs' | 'reviews'>('desc');
 
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [reviewerName, setReviewerName] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (product?.id) {
+      setIsLoadingReviews(true);
+      fetchProductReviews(product.id)
+        .then((data) => setReviews(data))
+        .finally(() => setIsLoadingReviews(false));
+    }
+  }, [product?.id]);
 
   // Pincode delivery checker state
   const [pincodeInput, setPincodeInput] = useState('');
@@ -98,21 +114,37 @@ export const ProductDetailPage: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleAddReview = (e: React.FormEvent) => {
+  const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reviewerName.trim() || !reviewComment.trim()) return;
+    if (!currentUser) {
+      showToast('Please sign in to submit a verified buyer review.', 'info');
+      return;
+    }
+    if (!reviewComment.trim()) return;
 
-    StorageService.addReview(product.id, {
+    setIsSubmittingReview(true);
+    const res = await submitProductReview({
       productId: product.id,
-      customerName: reviewerName.trim(),
       rating: reviewRating,
       comment: reviewComment.trim(),
-      verifiedPurchase: true,
     });
+    setIsSubmittingReview(false);
 
-    setReviewSubmitted(true);
-    setReviewerName('');
-    setReviewComment('');
+    if (res.success) {
+      setReviewSubmitted(true);
+      setReviewComment('');
+      showToast('Thank you! Your verified review has been submitted.', 'success');
+      const fresh = await fetchProductReviews(product.id);
+      setReviews(fresh);
+    } else {
+      const isDeliveredError = res.error?.includes('delivered orders');
+      showToast(
+        isDeliveredError
+          ? 'Only verified customers who purchased and received this handloom creation can leave a review.'
+          : (res.error || 'Failed to submit review.'),
+        'error'
+      );
+    }
   };
 
   // Related products
@@ -159,6 +191,9 @@ export const ProductDetailPage: React.FC = () => {
                     <ImageWithFallback
                       src={img}
                       alt={`${product.nameEn} thumbnail ${idx + 1}`}
+                      cldWidth={120}
+                      cldHeight={160}
+                      cldCrop="fill"
                       className="w-full h-full object-cover object-top"
                     />
                   </button>
@@ -172,6 +207,11 @@ export const ProductDetailPage: React.FC = () => {
                 src={product.images[selectedImageIdx] || product.images[0]}
                 alt={displayName}
                 fallbackText={displayName}
+                cldWidth={900}
+                cldHeight={1200}
+                cldCrop="fill"
+                responsive={true}
+                priority={true}
                 className="w-full h-full object-cover object-top"
               />
 
@@ -480,7 +520,7 @@ export const ProductDetailPage: React.FC = () => {
                   : 'text-stone-500 hover:text-slate-900'
               }`}
             >
-              Customer Reviews ({product.reviews?.length || 0})
+              Customer Reviews ({reviews.length})
             </button>
           </div>
 
@@ -531,22 +571,20 @@ export const ProductDetailPage: React.FC = () => {
                   </h4>
                   {reviewSubmitted ? (
                     <div className="p-3 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-semibold">
-                      Thank you for reviewing! Your feedback has been published.
+                      Thank you for reviewing! Your feedback has been verified and published.
                     </div>
                   ) : (
                     <form onSubmit={handleAddReview} className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                            Your Name
+                            Reviewer Name
                           </label>
                           <input
                             type="text"
-                            required
-                            value={reviewerName}
-                            onChange={(e) => setReviewerName(e.target.value)}
-                            placeholder="e.g. Meenakshi"
-                            className="w-full text-xs p-2 border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-800"
+                            disabled
+                            value={currentUser?.name || 'Please log in to review'}
+                            className="w-full text-xs p-2 border border-stone-300 rounded-md bg-stone-50 text-stone-600"
                           />
                         </div>
                         <div>
@@ -579,9 +617,10 @@ export const ProductDetailPage: React.FC = () => {
                       </div>
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-[#2D1619] text-amber-100 text-xs font-semibold rounded-lg hover:bg-[#431B21] cursor-pointer"
+                        disabled={isSubmittingReview || !currentUser}
+                        className="px-4 py-2 bg-[#2D1619] text-amber-100 text-xs font-semibold rounded-lg hover:bg-[#431B21] cursor-pointer disabled:opacity-50"
                       >
-                        Submit Review
+                        {isSubmittingReview ? 'Submitting...' : 'Submit Verified Review'}
                       </button>
                     </form>
                   )}
@@ -589,8 +628,10 @@ export const ProductDetailPage: React.FC = () => {
 
                 {/* Existing Reviews */}
                 <div className="space-y-4">
-                  {product.reviews && product.reviews.length > 0 ? (
-                    product.reviews.map((rev) => (
+                  {isLoadingReviews ? (
+                    <p className="text-xs text-stone-500">Loading reviews...</p>
+                  ) : reviews.length > 0 ? (
+                    reviews.map((rev) => (
                       <div key={rev.id} className="p-4 bg-white rounded-xl border border-[#E5DFD3] space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2">
@@ -601,7 +642,9 @@ export const ProductDetailPage: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <span className="text-stone-400 text-[11px] tabular-nums">{rev.date}</span>
+                          <span className="text-stone-400 text-[11px] tabular-nums">
+                            {new Date(rev.date).toLocaleDateString()}
+                          </span>
                         </div>
                         <div className="flex text-amber-500">
                           {[...Array(rev.rating)].map((_, i) => (
