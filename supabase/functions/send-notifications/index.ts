@@ -71,9 +71,30 @@ Deno.serve(async (req: Request) => {
     const isServiceRole = Boolean(supabaseServiceKey && authHeader === `Bearer ${supabaseServiceKey}`);
     const isSecretValid = Boolean(expectedSecret && incomingSecret === expectedSecret);
 
-    if (!isServiceRole && !isSecretValid) {
+    let isAdminOrStaff = false;
+    if (authHeader.startsWith('Bearer ') && !isServiceRole && supabaseUrl) {
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        const adminCheckClient = createClient(supabaseUrl, supabaseServiceKey);
+        const { data: { user } } = await adminCheckClient.auth.getUser(token);
+        if (user) {
+          const { data: profile } = await adminCheckClient
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+          if (profile && ['staff', 'admin', 'super_admin'].includes(profile.role)) {
+            isAdminOrStaff = true;
+          }
+        }
+      } catch {
+        isAdminOrStaff = false;
+      }
+    }
+
+    if (!isServiceRole && !isSecretValid && !isAdminOrStaff) {
       return new Response(
-        JSON.stringify({ error: 'Unauthorized: Missing or invalid x-webhook-secret or authorization header' }),
+        JSON.stringify({ error: 'Unauthorized: Caller must provide valid webhook secret or authenticated staff token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

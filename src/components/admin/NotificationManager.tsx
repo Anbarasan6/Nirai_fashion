@@ -157,11 +157,7 @@ export const NotificationManager: React.FC = () => {
   const handleDispatchNow = async () => {
     setIsDispatching(true);
     try {
-      const { data, error } = await supabase.functions.invoke('send-notifications', {
-        headers: {
-          'x-webhook-secret': import.meta.env.VITE_NOTIFY_WEBHOOK_SECRET || '',
-        },
-      });
+      const { data, error } = await supabase.functions.invoke('send-notifications');
 
       if (error) {
         showToast(`Dispatch failed: ${error.message}`, 'error');
