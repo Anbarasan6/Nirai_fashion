@@ -1,4 +1,4 @@
-# Nirai Handlooms (நிறை) — Production Launch Checklist
+# Nirai Handlooms (நிறை) — Comprehensive Production Launch Checklist
 
 > [!CAUTION]
 > **MANDATORY PRE-LAUNCH AUDIT**  
@@ -6,95 +6,99 @@
 
 ---
 
-## 🚨 Launch Blockers (Must Complete First)
-
-### 1. Supabase Auth Custom SMTP (Rate-Limit Bypass)
-- [ ] **Problem**: Default Supabase Auth email service is capped at ~3-4 emails per hour. Customers attempting to sign up, verify email, or reset password will get blocked.
-- [ ] **Resolution**: Configure Resend Custom SMTP in Supabase Dashboard:
-  - **Host**: `smtp.resend.com`
-  - **Port**: `465` (SSL) or `587` (TLS)
-  - **Username**: `resend`
-  - **Password**: `<YOUR_RESEND_API_KEY>`
-  - **Sender Email**: `orders@nirai.in` (or your verified domain address)
-- [ ] **Deploy Bilingual Templates**: Copy and paste the English + Tamil templates from [docs/SUPABASE_SMTP_SETUP.md](docs/SUPABASE_SMTP_SETUP.md) into **Supabase Dashboard > Authentication > Email Templates** for:
-  - Confirm Sign Up (`Verify your Nirai Account | உங்கள் நிறை கணக்கை உறுதிப்படுத்தவும்`)
-  - Reset Password (`Reset your Nirai Password | உங்கள் நிறை கடவுச்சொல்லை மீட்டமைக்கவும்`)
-  - Magic Link (`Your Nirai Sign-In Link | உங்கள் நிறை உள்நுழைவு இணைப்பு`)
+## 1. 🔑 Secrets and Keys
+- [ ] **Rotate Exposed Keys**: Rotate any Gemini API key, AI Gateway key, Resend key, or Supabase service role key that ever lived in git history or developer logs.
+- [ ] **Full-History Secret Scan**: Run a full-history Gitleaks scan (`gitleaks detect --verbose`) to ensure zero unmasked secrets remain in git commits.
+- [ ] **Verify Zero Client Secrets**: Confirm no server secret has a `VITE_` prefix in `.env` files or in Vercel client environment variables.
+- [ ] **Supabase Vault Secrets**: Confirm `RESEND_API_KEY`, `NOTIFY_WEBHOOK_SECRET`, `CRON_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` live exclusively in Supabase secrets.
 
 ---
 
-### 2. Resend Sending Domain Verification (Deliverability)
-- [ ] **Problem**: Without a verified domain, Resend runs in Sandbox Mode and will **ONLY deliver emails to the account owner's email address**. All customer notifications will fail with HTTP 403.
-- [ ] **Resolution**: Add the following DNS records to your domain registrar (GoDaddy, Cloudflare, etc.):
-  - **SPF**: `TXT` `@` with `v=spf1 include:resend.com ~all`
-  - **DKIM**: `TXT` / `CNAME` `resend._domainkey` with the unique key from Resend Dashboard
-  - **DMARC**: `TXT` `_dmarc` with `v=DMARC1; p=none; rua=mailto:postmaster@nirai.in`
-- [ ] **Verification**: Ensure the domain shows **Verified** status in the Resend dashboard.
-- [ ] **Set Flag**: Set `NOTIFY_DOMAIN_VERIFIED=true` in Edge Function environment.
+## 2. 🗄️ Supabase Database & Authentication
+- [ ] **Row Level Security (RLS)**: Confirm 100% of public tables enforce RLS (`npm run prod:check`).
+- [ ] **Minimal Anon Grants**: Verify `anon` role can only read active products, active categories, and settings, and invoke safe RPCs (`quote_cart`, `track_order`, `submit_payment_proof`).
+- [ ] **Custom SMTP via Resend**: Configure custom SMTP in **Supabase Dashboard > Authentication > SMTP Settings** (`smtp.resend.com`, port 465/587).
+- [ ] **Bilingual Email Templates**: Deploy English + Tamil templates for Confirm Sign Up, Reset Password, and Magic Link.
+- [ ] **Site URL & Redirect URLs**:
+  - Site URL: `https://nirai.in`
+  - Redirect URLs: `https://nirai.in/**`, `https://*.vercel.app/**`, `http://localhost:3000/**`
+- [ ] **Password Security & Leaked-Password Protection**: Enable HaveIBeenPwned leaked password protection and minimum 8-character password policy in Supabase Auth.
+- [ ] **Email Confirmations & Rate Limits**: Enable email confirmations on signup. Turn on Supabase Auth CAPTCHA (Cloudflare Turnstile or hCaptcha) and rate limits.
 
 ---
 
-## 🔑 Required Secrets & Environment Variables
-
-Configure these secrets in Supabase Edge Functions:
-
-```bash
-# Set Edge Function secrets
-supabase secrets set RESEND_API_KEY="re_..."
-supabase secrets set NOTIFY_FROM_EMAIL="Nirai Handlooms <orders@nirai.in>"
-supabase secrets set NOTIFY_WEBHOOK_SECRET="your_secure_random_webhook_secret"
-supabase secrets set SITE_URL="https://nirai.in"
-supabase secrets set NOTIFY_DOMAIN_VERIFIED="true"
-supabase secrets set CRON_SECRET="your_secure_cron_secret"
-```
-
-In your frontend hosting platform (Vercel, Netlify):
-```env
-VITE_SUPABASE_URL=https://lqzrahjmgzdsbosywjju.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-VITE_CLOUDINARY_UPLOAD_PRESET=your_preset
-VITE_NOTIFY_WEBHOOK_SECRET=your_secure_random_webhook_secret
-APP_URL=https://nirai.in
-```
+## 3. 💳 Payments & Reconciliation
+- [ ] **Live Account Verification**: Send a test payment of ₹1 from GPay/PhonePe to the merchant UPI VPA and verify funds appear in the business bank account; execute a ₹1 refund to test reversal.
+- [ ] **Dynamic QR Code**: Verify that scanning the QR code on the `/pay/:orderNumber` page pre-fills the exact merchant VPA and order amount.
+- [ ] **Payment Deadline**: Verify the deadline is set (default: 24 hours).
+- [ ] **Hourly Expiry Cron**: Confirm `expire_unpaid_orders()` cron job is active (`SELECT * FROM cron.job;`) and restocks inventory when orders expire.
+- [ ] **Reconciliation Routine**: Establish daily 15-30 minute verification sweeps as documented in `docs/FIRST_72_HOURS_RUNBOOK.md`.
 
 ---
 
-## ⏰ Automated Scheduled Jobs (pg_cron)
-
-Verify scheduled background tasks in Supabase SQL Editor (`SELECT * FROM cron.job;`):
-
-- [ ] **`expire-unpaid-orders`**: Runs every 15 minutes (`*/15 * * * *`)
-  - Executes `public.expire_unpaid_orders()`
-  - Cancels orders exceeding 24h payment window and restores reserved stock to inventory
-- [ ] **`payment-reminders`**: Runs every 15 minutes (`*/15 * * * *`)
-  - Executes `public.check_payment_reminders()`
-  - Enqueues reminders 4 hours before deadline for unpaid orders
-- [ ] **`send-notifications`**: Runs every 5 minutes (`*/5 * * * *`)
-  - Invokes `send-notifications` Edge Function
-  - Processes pending outbox rows with `claim_notifications()` (FOR UPDATE SKIP LOCKED)
+## 4. 📬 Notifications & Deliverability
+- [ ] **Resend Custom Domain**: Add DNS records (SPF, DKIM, DMARC) for `nirai.in` in Resend Dashboard and confirm **Verified** status.
+- [ ] **Inbox Deliverability Test**: Send test notifications to real Gmail, Yahoo, and Outlook inboxes and verify they land in the primary inbox, not Spam.
+- [ ] **Sender Address**: Set `NOTIFY_FROM_EMAIL="Nirai Handlooms <orders@nirai.in>"`.
+- [ ] **Outbox Concurrency**: Confirm outbox claiming uses `claim_notifications()` with `FOR UPDATE SKIP LOCKED`.
 
 ---
 
-## 🛡️ Security & Role Enforcement
-
-- [ ] **Row Level Security**: Verify `notifications_outbox` has RLS enabled and 0 public policies (access only via service role or `list_notifications` RPC).
-- [ ] **Staff Authorization**: Verify only staff/admin accounts can access `/admin` and execute verification RPCs.
-- [ ] **Storage Buckets**: Ensure `payment-receipts` bucket is private with signed URLs for staff viewing.
+## 5. 🛍️ Catalog & Content
+- [ ] **No Demo/Test Products**: Run `npm run prod:check` to ensure no mock or seed products exist in production database.
+- [ ] **High-Resolution Images**: Verify all active products use real Cloudinary URLs with responsive transformations (`cldUrl`).
+- [ ] **Accurate Inventory**: Count physical stock in warehouse and update `stock` and `low_stock_threshold` values.
 
 ---
 
-## 🧪 Pre-Launch Smoke Tests
+## 6. 📊 Monitoring & Alerts
+- [ ] **Sentry DSN**: Set `VITE_SENTRY_DSN` in Vercel Production environment with PII scrubbing verified (`tests/unit/sentryScrubber.test.ts`).
+- [ ] **Uptime Monitor**: Configure UptimeRobot or BetterStack to ping `https://nirai.in/api/health` every 2 minutes.
+- [ ] **5 Core Production Alerts**: Configure all 5 alerts detailed in `docs/UPTIME_AND_ALERTS.md` (Site Down, Outbox Failure > 0, Stale Pending Proofs > 24h, Expiry Missed > 1h, Sentry spike).
 
-1. Place a guest test order:
-   - Verify `order_placed` notification row created in `notifications_outbox`.
-   - Verify Pay Now link points to `/pay/<orderNumber>`.
-2. Submit UPI UTR payment proof:
-   - Verify order status moves to `Verification Pending`.
-   - Verify customer receives `payment_proof_received` notification.
-   - Verify admin receives `admin_payment_pending` alert.
-3. Verify payment in `/admin/orders?tab=payments`:
-   - Click "Approve & Confirm Order".
-   - Verify `payment_verified` notification enqueued.
-4. Mark Shipped with Courier & AWB:
-   - Verify `shipped` notification enqueued with tracking link.
+---
+
+## 7. 🔍 SEO & Social Sharing
+- [ ] **Sitemap Submission**: Submit `https://nirai.in/sitemap.xml` in Google Search Console.
+- [ ] **robots.txt**: Verify `robots.txt` disallows `/admin`, `/account`, `/checkout`, `/pay`, `/tracking`, `/reset-password`.
+- [ ] **WhatsApp / Social Preview Test**: Share a link to `https://nirai.in/product/<slug>` on WhatsApp, Facebook, and X to verify the edge middleware renders the preview image, title, and price.
+
+---
+
+## 8. ⚡ Performance & Budgets
+- [ ] **First-Load JS Budget**: Gzip size must remain within 10% of committed `bundle-baseline.json` (`npm run budget:check`).
+- [ ] **Lighthouse Mobile Score**: Run Lighthouse audit on `/`, `/catalog`, and PDP (target: Performance > 85, Accessibility > 95, SEO > 95).
+
+---
+
+## 9. ⚖️ Legal & Compliance
+- [ ] **Legal Audit**: Review `docs/LEGAL_AND_TRUST_AUDIT.md`.
+- [ ] **Grievance Officer**: Add designated Grievance Officer details to `/contact` and `/terms`.
+- [ ] **Real GSTIN**: Replace placeholder GSTIN with real 15-digit GSTIN in footer and invoice templates.
+- [ ] **Country of Origin**: Ensure "Country of Origin: India" is declared on product specifications.
+
+---
+
+## 10. 💾 Backups & Disaster Recovery
+- [ ] **Supabase Pro Plan**: Enable Supabase Pro ($25/mo) for daily automated backups.
+- [ ] **Manual Export Routine**: Schedule weekly `pg_dump` of business tables (`docs/BACKUPS_AND_DISASTER_RECOVERY.md`).
+- [ ] **Restore Rehearsal**: Rehearse restoring database dump into a local test database.
+
+---
+
+## 11. 🔄 Rollback Readiness
+- [ ] **Vercel Instant Rollback**: Confirm team members know how to trigger instant deployment rollback in Vercel dashboard (<60s).
+- [ ] **Migration Rollback Scripts**: Ensure rollback scripts exist in `supabase/rollbacks/` for all schema alterations.
+- [ ] **Checkout Killswitch**: Test emergency checkout pause toggle in `/admin/content`.
+
+---
+
+## 12. 👥 Team Access & MFA
+- [ ] **Multi-Factor Authentication (MFA)**: Enforce MFA on:
+  - [ ] GitHub organization / repository accounts
+  - [ ] Vercel account
+  - [ ] Supabase organization account
+  - [ ] Resend account
+  - [ ] Cloudinary account
+  - [ ] Domain registrar / DNS provider account
+- [ ] **Delete Demo Users**: Remove all non-production user accounts and assign strict RBAC (`admin`, `staff`).

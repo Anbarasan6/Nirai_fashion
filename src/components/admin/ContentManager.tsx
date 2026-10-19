@@ -34,6 +34,7 @@ import {
   Clock,
   CreditCard,
   AlertCircle,
+  AlertTriangle,
   Eye,
   Loader2,
 } from 'lucide-react';
@@ -77,6 +78,15 @@ export const ContentManager: React.FC = () => {
   const [paymentDeadlineHours, setPaymentDeadlineHours] = useState(24);
   const [codEnabled, setCodEnabled] = useState(false);
   const [isUploadingQr, setIsUploadingQr] = useState(false);
+
+  // Emergency Maintenance Mode / Killswitch State
+  const [checkoutEnabled, setCheckoutEnabled] = useState<boolean>(settings.checkoutEnabled !== false);
+  const [maintenanceMessageEn, setMaintenanceMessageEn] = useState<string>(
+    settings.maintenanceMessageEn || 'Checkout is temporarily paused for scheduled inventory maintenance. Please check back shortly.'
+  );
+  const [maintenanceMessageTa, setMaintenanceMessageTa] = useState<string>(
+    settings.maintenanceMessageTa || 'பராமரிப்பு பணி காரணமாக செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது. விரைவில் மீண்டும் முயற்சிக்கவும்.'
+  );
 
   // Fetch payment settings from Supabase payment_settings table
   useEffect(() => {
@@ -431,6 +441,9 @@ export const ContentManager: React.FC = () => {
         isAnnouncementActive,
         supportPhone,
         supportEmail,
+        checkoutEnabled,
+        maintenanceMessageEn,
+        maintenanceMessageTa,
       };
 
       // Save Store Settings
@@ -460,6 +473,65 @@ export const ContentManager: React.FC = () => {
   return (
     <div className="space-y-8 max-w-5xl pb-16">
       <form onSubmit={handleSaveAllSettings} className="space-y-8 text-xs">
+        {/* 0. EMERGENCY STORE MAINTENANCE & CHECKOUT KILLSWITCH */}
+        <div className={`p-6 rounded-xl border transition-all ${checkoutEnabled ? 'bg-white border-[#E2DBD0]' : 'bg-rose-50/50 border-rose-300'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${checkoutEnabled ? 'bg-amber-900/10 border-amber-900/20 text-amber-900' : 'bg-rose-100 border-rose-300 text-rose-700'}`}>
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-serif text-sm font-bold text-slate-900 uppercase tracking-wider">
+                  Emergency Maintenance Mode &amp; Checkout Killswitch
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Instantly pause storefront orders while keeping catalog browsing active.
+                </p>
+              </div>
+            </div>
+
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={checkoutEnabled}
+                onChange={(e) => setCheckoutEnabled(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-rose-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              <span className="ml-3 text-xs font-bold text-slate-900">
+                {checkoutEnabled ? 'Checkout Active' : 'Checkout Disabled'}
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                Maintenance Banner Message (English)
+              </label>
+              <textarea
+                rows={2}
+                value={maintenanceMessageEn}
+                onChange={(e) => setMaintenanceMessageEn(e.target.value)}
+                disabled={checkoutEnabled}
+                className="w-full p-2.5 border border-stone-300 rounded-lg text-xs focus:outline-none focus:border-amber-600 disabled:bg-stone-50 disabled:text-stone-400"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-stone-700 mb-1">
+                பராமரிப்பு அறிவிப்பு (Tamil)
+              </label>
+              <textarea
+                rows={2}
+                value={maintenanceMessageTa}
+                onChange={(e) => setMaintenanceMessageTa(e.target.value)}
+                disabled={checkoutEnabled}
+                className="w-full p-2.5 border border-stone-300 rounded-lg text-xs focus:outline-none focus:border-amber-600 disabled:bg-stone-50 disabled:text-stone-400"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* 1. MERCHANT PAYMENT GATEWAY, UPI QR CODE & BANK ACCOUNT SETUP */}
         <div className="bg-white p-6 rounded-xl border border-[#E2DBD0] shadow-2xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-3">

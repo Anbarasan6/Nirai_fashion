@@ -609,6 +609,9 @@ export async function fetchSettingsFromSupabase(): Promise<StoreSettings | null>
         isAnnouncementActive: data.is_announcement_active !== false,
         bankDetails: data.bank_details,
         upiDetails: data.upi_details,
+        checkoutEnabled: data.checkout_enabled !== false,
+        maintenanceMessageEn: data.maintenance_message_en || 'Checkout is temporarily paused for scheduled inventory maintenance. Please check back shortly.',
+        maintenanceMessageTa: data.maintenance_message_ta || 'பராமரிப்பு பணி காரணமாக செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது. விரைவில் மீண்டும் முயற்சிக்கவும்.',
       };
     } catch {
       return null;
@@ -635,6 +638,9 @@ export async function saveSettingsToSupabase(settings: StoreSettings): Promise<b
       is_announcement_active: settings.isAnnouncementActive,
       bank_details: settings.bankDetails,
       upi_details: settings.upiDetails,
+      checkout_enabled: settings.checkoutEnabled !== false,
+      maintenance_message_en: settings.maintenanceMessageEn,
+      maintenance_message_ta: settings.maintenanceMessageTa,
       updated_at: new Date().toISOString(),
     };
     const { error } = await supabase.from('settings').upsert(row, { onConflict: 'id' });

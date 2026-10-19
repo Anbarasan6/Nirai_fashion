@@ -558,5 +558,8 @@ export interface StoreSettings {
   supportPhone: string;
   supportEmail: string;
   isAnnouncementActive: boolean;
+  checkoutEnabled?: boolean;
+  maintenanceMessageEn?: string;
+  maintenanceMessageTa?: string;
   footerConfig?: FooterConfig;
 }

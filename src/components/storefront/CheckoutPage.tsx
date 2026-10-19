@@ -49,6 +49,7 @@ export const CheckoutPage: React.FC = () => {
     openTracking,
     currentUser,
     showToast,
+    storeSettings,
   } = useShop();
 
   // Form Fields
@@ -179,6 +180,17 @@ export const CheckoutPage: React.FC = () => {
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 0. Maintenance Mode / Killswitch Check
+    if (storeSettings?.checkoutEnabled === false) {
+      showToast(
+        language === 'ta'
+          ? (storeSettings.maintenanceMessageTa || 'பராமரிப்பு பணி காரணமாக செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது.')
+          : (storeSettings.maintenanceMessageEn || 'Checkout is temporarily paused for scheduled maintenance.'),
+        'error'
+      );
+      return;
+    }
 
     // 1. Zod schema validation
     const formValues: CheckoutFormValues = {
@@ -376,6 +388,23 @@ export const CheckoutPage: React.FC = () => {
           <span>/</span>
           <span className="text-slate-900 font-medium">Checkout</span>
         </div>
+
+        {/* Emergency Maintenance Mode Banner */}
+        {storeSettings?.checkoutEnabled === false && (
+          <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-3 shadow-xs">
+            <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-sm">
+                {language === 'ta' ? 'செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது' : 'Checkout Temporarily Paused'}
+              </p>
+              <p className="text-xs text-amber-900 mt-1">
+                {language === 'ta'
+                  ? storeSettings.maintenanceMessageTa || 'பராமரிப்பு பணி காரணமாக செக்அவுட் தற்காலிகமாக நிறுத்தப்பட்டுள்ளது. விரைவில் மீண்டும் முயற்சிக்கவும்.'
+                  : storeSettings.maintenanceMessageEn || 'Checkout is temporarily paused for scheduled inventory maintenance. Please check back shortly.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Server Quote Warning / Edge Case Alerts */}
         {quoteError && (
@@ -824,7 +853,7 @@ export const CheckoutPage: React.FC = () => {
               <div className="lg:hidden">
                 <button
                   type="submit"
-                  disabled={isProcessing || isQuoting || !!quoteError || hasOutOfStock}
+                  disabled={isProcessing || isQuoting || !!quoteError || hasOutOfStock || storeSettings?.checkoutEnabled === false}
                   className="w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isProcessing ? (
@@ -951,7 +980,7 @@ export const CheckoutPage: React.FC = () => {
               <button
                 type="submit"
                 form="checkout-form"
-                disabled={isProcessing || isQuoting || !!quoteError || hasOutOfStock}
+                disabled={isProcessing || isQuoting || !!quoteError || hasOutOfStock || storeSettings?.checkoutEnabled === false}
                 className="hidden lg:flex w-full py-4 bg-[#2D1619] hover:bg-[#431B21] text-amber-100 font-semibold text-xs rounded-xl items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isProcessing ? (
