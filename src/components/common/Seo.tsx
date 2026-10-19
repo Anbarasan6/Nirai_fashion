@@ -32,19 +32,14 @@ export const DEFAULT_OG_IMAGE = 'https://nirai.in/og-image.jpg';
  * and catalog filters/sorting to prevent duplicate-content indexing.
  */
 export function cleanCanonicalUrl(rawPathOrUrl?: string): string {
-  const base = (typeof window !== 'undefined' && window.location.origin) || DEFAULT_SITE_URL;
   let target = rawPathOrUrl || (typeof window !== 'undefined' ? window.location.pathname : '/');
 
   if (!target.startsWith('http://') && !target.startsWith('https://')) {
-    target = `${base}${target.startsWith('/') ? '' : '/'}${target}`;
+    target = `${DEFAULT_SITE_URL}${target.startsWith('/') ? '' : '/'}${target}`;
   }
 
   try {
-    const parsed = new URL(target, base);
-    // Always use canonical https://nirai.in for absolute URLs unless local dev
-    const origin = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
-      ? parsed.origin
-      : DEFAULT_SITE_URL;
+    const parsed = new URL(target, DEFAULT_SITE_URL);
 
     // Normalize path: remove trailing slash (except root)
     let pathname = parsed.pathname;
@@ -52,7 +47,7 @@ export function cleanCanonicalUrl(rawPathOrUrl?: string): string {
       pathname = pathname.slice(0, -1);
     }
 
-    return `${origin}${pathname}`;
+    return `${DEFAULT_SITE_URL}${pathname}`;
   } catch {
     return `${DEFAULT_SITE_URL}/`;
   }
