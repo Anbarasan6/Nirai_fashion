@@ -1,0 +1,13 @@
+{
+  "initialJsRawKb": 646.55,
+  "initialJsGzipKb": 182.95,
+  "timestamp": "2026-10-19T08:20:54.783Z",
+  "chunks": [
+    "index-BLle4ZO3.js",
+    "rolldown-runtime-hePW80VL.js",
+    "vendor-icons-B4K8F_Ja.js",
+    "vendor-react-CY4QHouE.js",
+    "vendor-router-CoPEOc9p.js",
+    "vendor-supabase-1yby8ldT.js"
+  ]
+}
