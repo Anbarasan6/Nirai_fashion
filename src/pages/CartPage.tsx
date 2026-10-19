@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
 import { ImageWithFallback } from '../components/common/ImageWithFallback';
+import { Seo } from '../components/common/Seo';
 import { ShoppingBag, ArrowRight, Trash2, Plus, Minus, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export const CartPage: React.FC = () => {
@@ -24,6 +25,7 @@ export const CartPage: React.FC = () => {
   if (cart.length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-4">
+        <Seo title="Shopping Bag" canonical="/cart" noindex={true} />
         <div className="w-16 h-16 mx-auto bg-stone-100 rounded-full flex items-center justify-center text-stone-400">
           <ShoppingBag className="w-8 h-8" />
         </div>
@@ -45,6 +47,7 @@ export const CartPage: React.FC = () => {
 
   return (
     <div className="bg-[#FAF9F5] min-h-screen py-10">
+      <Seo title="Shopping Bag" canonical="/cart" noindex={true} />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-stone-200 pb-4">

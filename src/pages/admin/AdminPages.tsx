@@ -4,6 +4,7 @@ import { useShop } from '../../context/ShopContext';
 import { AdminLayout } from '../../components/admin/AdminLayout';
 import { ToastContainer } from '../../components/common/ToastContainer';
 import { AuthModal } from '../../components/common/AuthModal';
+import { Seo } from '../../components/common/Seo';
 
 // Code-split admin modules to prevent bloating public storefront bundle
 const AdminDashboard = lazy(() => import('../../components/admin/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
@@ -63,6 +64,11 @@ export const AdminPages: React.FC = () => {
 
   return (
     <AdminLayout>
+      <Seo
+        title="Admin Management Suite"
+        description="Nirai Handlooms administrative management interface."
+        noindex={true}
+      />
       <Suspense fallback={<AdminLoadingFallback />}>
         {currentTab === 'dashboard' && <AdminDashboard />}
         {currentTab === 'homepage' && <HomepageManager />}

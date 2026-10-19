@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
+import { Seo } from '../components/common/Seo';
 
 interface ErrorPageProps {
   error?: Error | null;
@@ -21,6 +22,11 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({ error, resetError }) => {
 
   return (
     <div className="bg-[#FAF9F5] min-h-[70vh] py-16 flex items-center justify-center px-4">
+      <Seo
+        title="System Error"
+        description="A technical error occurred on Nirai Handlooms."
+        noindex={true}
+      />
       <div className="max-w-md w-full mx-auto text-center space-y-6 bg-white p-8 rounded-2xl border border-[#E8E2D5] shadow-lg">
         <div className="w-16 h-16 bg-rose-50 text-rose-700 rounded-full flex items-center justify-center mx-auto border border-rose-200">
           <AlertTriangle className="w-8 h-8" />

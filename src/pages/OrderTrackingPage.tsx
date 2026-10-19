@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
 import { OrderTrackingPage as TrackingComponent } from '../components/storefront/OrderTrackingPage';
+import { Seo } from '../components/common/Seo';
 
 export const OrderTrackingPage: React.FC = () => {
   const { orderId } = useParams<{ orderId?: string }>();
@@ -15,5 +16,10 @@ export const OrderTrackingPage: React.FC = () => {
     }
   }, [orderId, searchParams, setTrackingOrderId]);
 
-  return <TrackingComponent />;
+  return (
+    <>
+      <Seo title="Track Order" canonical="/tracking" noindex={true} />
+      <TrackingComponent />
+    </>
+  );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useShop } from '../context/ShopContext';
 import { supabase } from '../services/supabase';
+import { Seo } from '../components/common/Seo';
 import { Lock, CheckCircle2, AlertCircle, ArrowRight, Loader2, KeyRound } from 'lucide-react';
 
 export const ResetPasswordPage: React.FC = () => {
@@ -63,6 +64,7 @@ export const ResetPasswordPage: React.FC = () => {
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-16 px-4">
+      <Seo title="Reset Password" canonical="/reset-password" noindex={true} />
       <div className="max-w-md w-full bg-white border border-[#E8E2D5] rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="bg-[#2D1619] text-amber-100 p-8 text-center relative">

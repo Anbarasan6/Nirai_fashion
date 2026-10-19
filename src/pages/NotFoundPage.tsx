@@ -1,12 +1,18 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, Compass } from 'lucide-react';
+import { Seo } from '../components/common/Seo';
 
 export const NotFoundPage: React.FC = () => {
   const navigate = useNavigate();
 
   return (
     <div className="bg-[#FAF9F5] min-h-screen py-20 flex items-center justify-center">
+      <Seo
+        title="Page Not Found"
+        description="The page you were looking for does not exist on Nirai Handlooms."
+        noindex={true}
+      />
       <div className="max-w-md mx-auto px-4 text-center space-y-6">
         <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-900 border border-amber-200">
           <Compass className="w-10 h-10 animate-spin-slow" />
