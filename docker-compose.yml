@@ -1,0 +1,51 @@
+# ==============================================================================
+# Nirai E-Commerce - Docker Compose Configuration
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # Web Application Service (Nginx + React 19 Vite Production SPA)
+  # ----------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_CLOUDINARY_CLOUD_NAME: ${VITE_CLOUDINARY_CLOUD_NAME:-}
+        VITE_CLOUDINARY_UPLOAD_PRESET: ${VITE_CLOUDINARY_UPLOAD_PRESET:-}
+        VITE_SITE_URL: ${VITE_SITE_URL:-http://localhost}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    container_name: nirai_ecommerce_web
+    restart: unless-stopped
+    ports:
+      # Maps host port 80 to container port 80 (Change to "3000:80" if port 80 is occupied)
+      - "${PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - nirai-network
+
+  # ----------------------------------------------------------------------------
+  # Optional: Cloudflare Zero-Trust Tunnel for 100% Free HTTPS Domain
+  # Usage: Run `docker compose --profile tunnel up -d`
+  # ----------------------------------------------------------------------------
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: nirai_cloudflare_tunnel
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - nirai-network
+    depends_on:
+      - web
+
+networks:
+  nirai-network:
+    driver: bridge
