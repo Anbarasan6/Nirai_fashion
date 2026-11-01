@@ -20,7 +20,7 @@
     "analyze": "cross-env ANALYZE=true vite build"
   },
   "dependencies": {
-    "@sentry/react": "^11.8.0",
+    "@sentry/react": "^11.10.0",
     "@supabase/supabase-js": "^2.117.2",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
